@@ -1,0 +1,38 @@
+{
+  "name": "forensiq-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js",
+    "db:studio": "npx prisma studio --schema=config/database/schema.prisma",
+    "db:push": "npx prisma db push --schema=config/database/schema.prisma",
+    "db:migrate": "npx prisma migrate dev --schema=config/database/schema.prisma",
+    "db:generate": "npx prisma generate --schema=config/database/schema.prisma",
+    "postinstall": "npx prisma generate --schema=config/database/schema.prisma"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@azure/communication-email": "^1.1.0",
+    "@prisma/client": "^5.22.0",
+    "bcrypt": "^6.0.0",
+    "body-parser": "^2.2.2",
+    "cloudinary": "^2.5.1",
+    "cors": "^2.8.5",
+    "crypto": "^1.0.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "express-fileupload": "^1.5.1",
+    "forensiq-backend": "file:",
+    "google-auth-library": "^10.9.0",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^9.0.3",
+    "nodemon": "^3.1.14",
+    "prisma": "^5.22.0",
+    "razorpay": "^2.9.6",
+    "xlsx": "^0.18.5"
+  }
+}

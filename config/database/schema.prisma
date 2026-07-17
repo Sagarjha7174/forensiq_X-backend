@@ -1,0 +1,461 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DB_URL")
+}
+
+model User {
+  id                        String                     @id @default(uuid())
+  email                     String                     @unique
+  name                      String
+  password                  String
+  phone                     String                     @unique
+  isActive                  Boolean                    @default(true)
+  role                      String                     @default("STUDENT")
+  degree                    String
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  classes                   String
+  auth_provider             String                     @default("email")
+  google_id                 String?
+  profile_image             String?
+  is_sub_admin              Boolean                    @default(false)
+  attempts                  Attempt[]
+  NetworkEventRegistrations NetworkEventRegistration[]
+  notifications             Notification[]
+  payments                  Payment[]
+  portalMessages            PortalMessage[]
+  portalRequests            PortalRequest[]
+  StaffReviewedActions      StaffPendingAction[]       @relation("StaffActionReviewer")
+  StaffPendingActions       StaffPendingAction[]       @relation("StaffActionSubmitter")
+
+  @@unique([email, phone])
+}
+
+model Notification {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  title      String   @db.VarChar(255)
+  message    String   @db.Text
+  is_read    Boolean  @default(false)
+  type       String   @default("info") @db.VarChar(50)
+  created_at DateTime @default(now())
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id], map: "Notification_user_id_fkey")
+}
+
+model PasswordResetOtp {
+  id         String   @id @default(uuid())
+  email      String   @unique
+  otp_hash   String
+  expires_at DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model StaffPendingAction {
+  id            Int       @id @default(autoincrement())
+  submitted_by  String
+  action_type   String    @db.VarChar(80)
+  payload       Json
+  status        String    @default("pending")
+  reviewed_by   String?
+  reviewed_at   DateTime?
+  reject_reason String?   @db.Text
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+  reviewer      User?     @relation("StaffActionReviewer", fields: [reviewed_by], references: [id])
+  submitter     User      @relation("StaffActionSubmitter", fields: [submitted_by], references: [id], onDelete: Cascade)
+
+  @@index([reviewed_by], map: "StaffPendingAction_reviewed_by_fkey")
+  @@index([submitted_by], map: "StaffPendingAction_submitted_by_fkey")
+}
+
+model NetworkEvent {
+  id            Int                        @id @default(autoincrement())
+  title         String                     @db.VarChar(255)
+  summary       String?                    @db.Text
+  details       String?                    @db.Text
+  date          DateTime
+  mode          String                     @default("Online")
+  location      String?                    @db.VarChar(255)
+  capacity      Int?
+  image_url     String?                    @db.VarChar(255)
+  created_at    DateTime                   @default(now())
+  updated_at    DateTime                   @updatedAt
+  registrations NetworkEventRegistration[]
+}
+
+model NetworkEventRegistration {
+  id         Int          @id @default(autoincrement())
+  event_id   Int
+  user_id    String
+  created_at DateTime     @default(now())
+  updated_at DateTime     @updatedAt
+  event      NetworkEvent @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([event_id, user_id])
+  @@index([user_id], map: "NetworkEventRegistration_user_id_fkey")
+}
+
+model Course {
+  id          String    @id @default(uuid())
+  name        String
+  description String
+  class       String?
+  teacher     String?
+  degree      String?
+  videoUrl    String?
+  imageUrl    String?
+  price       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  notes       Notes[]
+  payments    Payment[]
+  quizess     Quiz[]    @relation("CourseToQuiz")
+  
+  // CMS Relations
+  modules       CourseModule[]
+  resources     CourseResource[]
+  assignments   CourseAssignment[]
+  announcements CourseAnnouncement[]
+}
+
+model CourseModule {
+  id          String          @id @default(uuid())
+  courseId    String
+  course      Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  description String?         @db.Text
+  order       Int             @default(0)
+  lectures    CourseLecture[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([courseId])
+}
+
+model CourseLecture {
+  id          String        @id @default(uuid())
+  moduleId    String
+  module      CourseModule  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title       String
+  description String?       @db.Text
+  videoUrl    String?
+  videoType   String?       // "YOUTUBE", "VIMEO", "CLOUDINARY", "DRIVE", "MP4"
+  duration    Int           @default(0) // seconds
+  order       Int           @default(0)
+  isFree      Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([moduleId])
+}
+
+model CourseResource {
+  id          String        @id @default(uuid())
+  courseId    String
+  course      Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  fileUrl     String
+  fileType    String?       // "PDF", "DOCX", "ZIP", etc.
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([courseId])
+}
+
+model CourseAssignment {
+  id          String        @id @default(uuid())
+  courseId    String
+  course      Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  description String?       @db.Text
+  fileUrl     String?
+  deadline    DateTime?
+  totalMarks  Int           @default(100)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([courseId])
+}
+
+model CourseAnnouncement {
+  id          String        @id @default(uuid())
+  courseId    String
+  course      Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  content     String        @db.Text
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([courseId])
+}
+
+model Quiz {
+  id        String     @id @default(uuid())
+  queCount  Int
+  passMark  Int
+  total     Int
+  duration  Int
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  name      String?
+  attempts  Attempt[]
+  course    Course[]   @relation("CourseToQuiz")
+  questions Question[] @relation("QuestionToQuiz")
+}
+
+model Question {
+  id        String            @id @default(uuid())
+  question  String            @db.Text
+  options   Json
+  answer    String
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  image     String?
+  attempts  QuestionAttempt[]
+  quizess   Quiz[]            @relation("QuestionToQuiz")
+}
+
+model Attempt {
+  id               String            @id @default(uuid())
+  userId           String
+  quizId           String
+  score            Int
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  quiz             Quiz              @relation(fields: [quizId], references: [id])
+  user             User              @relation(fields: [userId], references: [id])
+  questionAttempts QuestionAttempt[]
+
+  @@index([userId])
+  @@index([quizId])
+}
+
+model QuestionAttempt {
+  id         String   @id @default(uuid())
+  attemptId  String
+  questionId String
+  answer     String
+  isCorrect  Boolean
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  attempt    Attempt  @relation(fields: [attemptId], references: [id])
+  question   Question @relation(fields: [questionId], references: [id])
+
+  @@index([attemptId])
+  @@index([questionId])
+}
+
+model Notes {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  url         String?
+  courseId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  course      Course   @relation(fields: [courseId], references: [id])
+
+  @@index([courseId], map: "Notes_courseId_fkey")
+}
+
+model announcement {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  url         String?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum EventType {
+  PUBLIC
+  MEMBERSHIP
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EventPhase {
+  UPCOMING
+  PAST
+}
+
+model EventCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  events    Event[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EventGallery {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  url       String
+  caption   String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Event {
+  id              String       @id @default(uuid())
+  title           String       @db.VarChar(255)
+  slug            String       @unique @db.VarChar(255)
+  shortDescription String?     @db.Text
+  fullDescription  String?     @db.Text
+  
+  type            EventType    @default(PUBLIC)
+  phase           EventPhase   @default(UPCOMING)
+  status          EventStatus  @default(DRAFT)
+  
+  date            DateTime?
+  startTime       String?
+  endTime         String?
+  venue           String?
+  onlineLink      String?
+  
+  registrationLink String?
+  registrationEnd  DateTime?
+  
+  coverImage      String?
+  thumbnail       String?
+  banner          String?
+  
+  isFeatured      Boolean      @default(false)
+  
+  seoTitle        String?
+  seoDescription  String?
+  keywords        String?
+  
+  organizer       String?
+  tags            String?
+  
+  categoryId      String?
+  category        EventCategory? @relation(fields: [categoryId], references: [id])
+  
+  galleries       EventGallery[]
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model Notice {
+  id          String   @id @default(uuid())
+  title       String?
+  description String?  @db.Text
+  fileUrl     String?
+  isActive    Boolean? @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  targetRole  String?  @default("ALL")
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  userId            String
+  courseId          String
+  razorpayOrderId   String        @unique
+  razorpayPaymentId String?       @unique
+  status            PaymentStatus
+  amount            Int
+  createdAt         DateTime      @default(now())
+  course            Course        @relation(fields: [courseId], references: [id])
+  user              User          @relation(fields: [userId], references: [id])
+
+  @@index([userId, courseId])
+  @@index([razorpayOrderId])
+  @@index([courseId])
+  @@index([userId])
+}
+
+model Blog {
+  id        String   @id @default(uuid())
+  title     String
+  content   String   @db.Text
+  author    String
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PortalRequest {
+  id           String          @id @default(uuid())
+  userId       String
+  moduleType   String
+  title        String
+  status       String          @default("submitted")
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  admin_notes  String?         @db.Text
+  formData     Json
+  meeting_date String?
+  meeting_link String?
+  meeting_time String?
+  files        PortalFile[]
+  messages     PortalMessage[]
+  activities   PortalRequestActivity[]
+  user         User            @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([moduleType])
+}
+
+model PortalMessage {
+  id             String        @id @default(uuid())
+  requestId      String
+  userId         String
+  message        String        @db.Text
+  isAdmin        Boolean       @default(false)
+  client_temp_id String?
+  createdAt      DateTime      @default(now())
+  request        PortalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user           User          @relation(fields: [userId], references: [id])
+
+  @@index([requestId])
+  @@index([userId], map: "PortalMessage_userId_fkey")
+}
+
+model PortalFile {
+  id        String        @id @default(uuid())
+  requestId String
+  fileUrl   String
+  fileName  String
+  createdAt DateTime      @default(now())
+  request   PortalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+model PortalRequestActivity {
+  id          String        @id @default(uuid())
+  requestId   String
+  action      String
+  description String
+  performedBy String
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  request     PortalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+enum PaymentStatus {
+  CREATED
+  SUCCESS
+  FAILED
+}
