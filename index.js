@@ -20,8 +20,9 @@ app.use(cors({
     "https://forensiq-r5bkmf3qd-jvipul332-gmailcoms-projects.vercel.app",
     "https://forensiq-git-feature-ui-blog-jvipul332-gmailcoms-projects.vercel.app/",
     "https://forensiq-git-feature-ui-blog-jvipul332-gmailcoms-projects.vercel.app",
-    "http://localhost:3000"
-  ],
+    "http://localhost:3000",
+    process.env.FRONTEND_URL
+  ].filter(Boolean),
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
