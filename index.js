@@ -14,15 +14,19 @@ const PORT = process.env.PORT || 5000;
    1️⃣ CORS (ONCE)
 ========================= */
 app.use(cors({
-  origin: [
-    "https://forensiq.in",
-    "https://www.forensiq.in",
-    "https://forensiq-r5bkmf3qd-jvipul332-gmailcoms-projects.vercel.app",
-    "https://forensiq-git-feature-ui-blog-jvipul332-gmailcoms-projects.vercel.app/",
-    "https://forensiq-git-feature-ui-blog-jvipul332-gmailcoms-projects.vercel.app",
-    "http://localhost:3000",
-    process.env.FRONTEND_URL
-  ].filter(Boolean),
+  origin: function (origin, callback) {
+    if (
+      !origin || 
+      origin.includes('vercel.app') || 
+      origin.includes('localhost') || 
+      origin.includes('forensiq.in') || 
+      origin === process.env.FRONTEND_URL
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
