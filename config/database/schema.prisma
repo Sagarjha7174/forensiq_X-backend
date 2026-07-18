@@ -23,6 +23,9 @@ model User {
   google_id                 String?
   profile_image             String?
   is_sub_admin              Boolean                    @default(false)
+  accountStatus             AccountStatus              @default(ACTIVE)
+  isVerified                Boolean                    @default(false)
+  enrollments               Enrollment[]
   attempts                  Attempt[]
   NetworkEventRegistrations NetworkEventRegistration[]
   notifications             Notification[]
@@ -113,10 +116,12 @@ model Course {
   videoUrl    String?
   imageUrl    String?
   price       Int       @default(0)
+  status      CourseStatus @default(DRAFT)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   notes       Notes[]
   payments    Payment[]
+  enrollments Enrollment[]
   quizess     Quiz[]    @relation("CourseToQuiz")
   
   // CMS Relations
@@ -376,11 +381,33 @@ model Payment {
   createdAt         DateTime      @default(now())
   course            Course        @relation(fields: [courseId], references: [id])
   user              User          @relation(fields: [userId], references: [id])
+  enrollments       Enrollment[]
 
   @@index([userId, courseId])
   @@index([razorpayOrderId])
   @@index([courseId])
   @@index([userId])
+}
+
+model Enrollment {
+  id          String           @id @default(uuid())
+  userId      String
+  courseId    String
+  paymentId   String?
+  source      EnrollmentSource @default(MANUAL)
+  status      EnrollmentStatus @default(ACTIVE)
+  enrolledAt  DateTime         @default(now())
+  activatedAt DateTime?
+  completedAt DateTime?
+
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course      Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  payment     Payment?         @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+  @@index([paymentId])
 }
 
 model Blog {
@@ -458,4 +485,29 @@ enum PaymentStatus {
   CREATED
   SUCCESS
   FAILED
+}
+
+enum CourseStatus {
+  ACTIVE
+  INACTIVE
+  DRAFT
+  ARCHIVED
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum EnrollmentSource {
+  PURCHASE
+  MANUAL
+  SCHOLARSHIP
+  ADMIN
 }

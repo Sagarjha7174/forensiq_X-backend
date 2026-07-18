@@ -12,7 +12,7 @@ const updateCourse=async(req,res)=>{
     if(!course){
         return res.status(404).json({error:"Course not found"});
     }
-    const { name, description, courseClass, teacher, degree, videoUrl, imageUrl, price } = req.body;
+    const { name, description, courseClass, teacher, degree, videoUrl, imageUrl, price, status } = req.body;
     try {
         var updatedCourse = await prisma.course.update({
             where:{
@@ -26,7 +26,8 @@ const updateCourse=async(req,res)=>{
                 degree:degree || course.degree,
                 videoUrl:videoUrl || course.videoUrl,
                 imageUrl:imageUrl || course.imageUrl,
-                price:price || course.price,
+                price:price !== undefined ? price : course.price,
+                status: status || course.status
             },
         });
         res.status(201).json(updatedCourse);

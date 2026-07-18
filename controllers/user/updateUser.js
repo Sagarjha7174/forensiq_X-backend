@@ -12,6 +12,9 @@ const updateUser = async (req, res) => {
     degree,
     classes,
     isActive,
+    accountStatus,
+    isVerified,
+    role,
     courseIds // ADMIN ONLY
   } = req.body;
 
@@ -34,8 +37,16 @@ const updateUser = async (req, res) => {
         phone: phone ?? user.phone,
         degree: degree ?? user.degree,
         classes: classes ?? user.classes,
-        isActive: typeof isActive === "boolean" ? isActive : user.isActive
+        isActive: typeof isActive === "boolean" ? isActive : user.isActive,
+        accountStatus: accountStatus ?? user.accountStatus,
+        isVerified: typeof isVerified === "boolean" ? isVerified : user.isVerified,
+        role: role ?? user.role
       };
+
+      // If updating isActive manually via old frontend, sync to accountStatus
+      if (typeof isActive === "boolean" && !accountStatus) {
+        updateData.accountStatus = isActive ? 'ACTIVE' : 'INACTIVE';
+      }
 
       if (password) {
         updateData.password = await bcrypt.hash(password, 10);
@@ -47,41 +58,41 @@ const updateUser = async (req, res) => {
       });
 
       /* =========================
-         2️⃣ ADMIN: Grant courses safely
+         2️⃣ ADMIN: Grant courses safely (Backward Compatibility)
       ========================= */
       if (Array.isArray(courseIds) && courseIds.length > 0) {
         for (const courseId of courseIds) {
-          // Check if already SUCCESS
-          const successPayment = await tx.payment.findFirst({
+          // Check for existing enrollment
+          const existingEnrollment = await tx.enrollment.findUnique({
             where: {
-              userId: uid,
-              courseId,
-              status: "SUCCESS"
+              userId_courseId: { userId: uid, courseId }
             }
           });
 
-          // If already has access → skip
-          if (successPayment) {
-            continue;
+          if (existingEnrollment) {
+            continue; // Already enrolled
           }
 
-          // Clean any stale payments
-          await tx.payment.deleteMany({
-            where: {
-              userId: uid,
-              courseId,
-              status: { in: ["CREATED", "FAILED"] }
-            }
-          });
-
-          // Grant fresh SUCCESS payment
-          await tx.payment.create({
+          // Generate dummy payment for legacy queries
+          const payment = await tx.payment.create({
             data: {
               userId: uid,
               courseId,
               amount: 0,
               status: "SUCCESS",
               razorpayOrderId: `ADMIN_${uid}_${courseId}_${Date.now()}`
+            }
+          });
+
+          // Create true enrollment
+          await tx.enrollment.create({
+            data: {
+              userId: uid,
+              courseId,
+              paymentId: payment.id,
+              source: "ADMIN",
+              status: "ACTIVE",
+              activatedAt: new Date()
             }
           });
         }

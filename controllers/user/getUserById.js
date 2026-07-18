@@ -13,22 +13,32 @@ const getUser = async (req, res) => {
         name: true,
         phone: true,
         createdAt: true,
-        isActive: true,
+        updatedAt: true,
+        isActive: true, // Keep for backward compatibility
+        accountStatus: true,
+        isVerified: true,
+        role: true,
         degree: true,
         classes: true,
-        payments: {
-          where: {
-            status: "SUCCESS"
-          },
-          select: {
+        profile_image: true,
+        enrollments: {
+          include: {
             course: {
               select: {
                 id: true,
                 name: true,
                 description: true,
-                createdAt: true
+                status: true
               }
             }
+          },
+          orderBy: { enrolledAt: 'desc' }
+        },
+        _count: {
+          select: {
+            portalRequests: true,
+            payments: true,
+            enrollments: true
           }
         }
       }
@@ -38,19 +48,21 @@ const getUser = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Convert payments → courses (to keep frontend unchanged)
     const formattedUser = {
       ...user,
-      courses: user.payments.map(p => p.course),
-      payments: undefined
+      courses: user.enrollments.filter(e => e.status === 'ACTIVE').map(e => e.course), // backward compatibility for frontend
+      stats: {
+        requestCount: user._count.portalRequests,
+        coursesCount: user._count.enrollments,
+        paymentsCount: user._count.payments
+      }
     };
+    delete formattedUser._count;
 
     res.status(200).json(formattedUser);
   } catch (error) {
     console.error("Error fetching user:", error);
-    res.status(500).json({
-      error: "An error occurred while fetching the user."
-    });
+    res.status(500).json({ error: "An error occurred while fetching the user." });
   }
 };
 
