@@ -1,12 +1,9 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
-const getUser = async (req, res) => {
-  const { id } = req.params;
-
+async function main() {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id },
+    const user = await prisma.user.findFirst({
       select: {
         id: true,
         email: true,
@@ -45,7 +42,8 @@ const getUser = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      console.log("User not found");
+      return;
     }
 
     const formattedUser = {
@@ -58,12 +56,11 @@ const getUser = async (req, res) => {
       }
     };
     delete formattedUser._count;
-
-    res.status(200).json(formattedUser);
-  } catch (error) {
-    console.error("Error fetching user:", error);
-    res.status(500).json({ error: "An error occurred while fetching the user.", details: error.message, stack: error.stack });
+    
+    console.log("Success!");
+  } catch (err) {
+    console.error("FORMAT ERROR:");
+    console.error(err);
   }
-};
-
-module.exports = { getUser };
+}
+main().finally(() => prisma.$disconnect());
