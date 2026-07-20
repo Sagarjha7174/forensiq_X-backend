@@ -429,26 +429,70 @@ model Blog {
   updatedAt DateTime @updatedAt
 }
 
+model ServiceCategory {
+  id               String               @id @default(uuid())
+  name             String
+  slug             String               @unique
+  icon             String?
+  shortDescription String?              @db.Text
+  displayOrder     Int                  @default(0)
+  isActive         Boolean              @default(true)
+  services         ServiceCatalogItem[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+}
+
+model ServiceCatalogItem {
+  id                   String          @id @default(uuid())
+  categoryId           String
+  category             ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  title                String
+  slug                 String          @unique
+  shortDescription     String?         @db.Text
+  detailedDescription  String?         @db.Text
+  estimatedMinPrice    Int?
+  estimatedMaxPrice    Int?
+  pricingLabel         String?
+  icon                 String?
+  displayOrder         Int             @default(0)
+  isActive             Boolean         @default(true)
+  featured             Boolean         @default(false)
+  allowDirectRequest   Boolean         @default(true)
+  requiresConsultation Boolean         @default(false)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  portalRequests       PortalRequest[]
+}
+
 model PortalRequest {
-  id           String          @id @default(uuid())
-  userId       String
-  moduleType   String
-  title        String
-  status       String          @default("submitted")
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  admin_notes  String?         @db.Text
-  formData     Json
-  meeting_date String?
-  meeting_link String?
-  meeting_time String?
-  files        PortalFile[]
-  messages     PortalMessage[]
-  activities   PortalRequestActivity[]
-  user         User            @relation(fields: [userId], references: [id])
+  id             String          @id @default(uuid())
+  userId         String
+  moduleType     String
+  title          String
+  status         String          @default("submitted")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  admin_notes    String?         @db.Text
+  formData       Json
+  meeting_date   String?
+  meeting_link   String?
+  meeting_time   String?
+  
+  serviceId        String?
+  service          ServiceCatalogItem? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  serviceCategory  String?
+  serviceName      String?
+  estimatedPrice   String?
+
+  files          PortalFile[]
+  messages       PortalMessage[]
+  activities     PortalRequestActivity[]
+  user           User            @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([moduleType])
+  @@index([serviceId])
 }
 
 model PortalMessage {

@@ -39,5 +39,6 @@ routeTable.get("/allBlogs", getAllBlogs);
 routeTable.use("/portal-requests", verifyToken, portalRequestRoutes);
 routeTable.use("/events", require("./event/eventRoutes"));
 routeTable.use("/enrollments", verifyToken, require("./enrollmentRoutes"));
+routeTable.use("/catalog", require("./serviceCatalogRoutes"));
 
 module.exports = routeTable;

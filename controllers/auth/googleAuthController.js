@@ -27,15 +27,22 @@ exports.googleAuth = async (req, res) => {
       return res.status(500).json({ message: 'Google Auth is not configured on backend' });
     }
 
-    // Verify Google Token
-    const ticket = await client.verifyIdToken({
-      idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID,
+    // Verify Google Access Token via UserInfo endpoint
+    const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${credential}`,
+        'Content-Type': 'application/json'
+      }
     });
-    
-    const payload = ticket.getPayload();
+    if (!userInfoResponse.ok) {
+      const errorBody = await userInfoResponse.text();
+      console.error('[GOOGLE-AUTH] UserInfo fetch failed:', errorBody);
+      return res.status(401).json({ message: 'Invalid Google access token' });
+    }
+    const payload = await userInfoResponse.json();
     if (!payload || !payload.email) {
-      return res.status(401).json({ message: 'Invalid Google credential payload' });
+      return res.status(401).json({ message: 'Invalid Google user info payload' });
     }
 
     const email = String(payload.email).toLowerCase();
@@ -84,6 +91,7 @@ exports.googleAuth = async (req, res) => {
       });
     } else {
       // New user
+      const { classes, course } = req.body;
       const randomPasswordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
       user = await prisma.user.create({
         data: {
@@ -95,8 +103,8 @@ exports.googleAuth = async (req, res) => {
           profile_image: profileImage,
           role,
           auth_provider: 'google',
-          classes: 'none',
-          degree: 'none'
+          classes: classes || 'none',
+          degree: course || 'none'
         }
       });
 
