@@ -35,11 +35,13 @@ exports.googleAuth = async (req, res) => {
         'Content-Type': 'application/json'
       }
     });
+
     if (!userInfoResponse.ok) {
       const errorBody = await userInfoResponse.text();
       console.error('[GOOGLE-AUTH] UserInfo fetch failed:', errorBody);
       return res.status(401).json({ message: 'Invalid Google access token' });
     }
+
     const payload = await userInfoResponse.json();
     if (!payload || !payload.email) {
       return res.status(401).json({ message: 'Invalid Google user info payload' });
@@ -59,6 +61,8 @@ exports.googleAuth = async (req, res) => {
       }
     });
 
+    let isNewUser = false;
+
     if (user) {
       if (user.role === 'ADMIN' || user.role === 'SUBADMIN') {
         return res.status(403).json({ message: 'Google login is disabled for admin accounts' });
@@ -70,7 +74,7 @@ exports.googleAuth = async (req, res) => {
         });
       }
 
-      // Existing user - verify role
+      // Existing user - verify role matches
       if (user.role !== role && user.role) {
         return res.status(400).json({
           message: `This email is registered as ${user.role}. Please use that role to login.`
@@ -78,9 +82,10 @@ exports.googleAuth = async (req, res) => {
       }
 
       if (user.isActive === false) {
-        return res.status(401).json({ error: "User is not active" });
+        return res.status(401).json({ error: 'User is not active' });
       }
 
+      // Update Google ID and profile image if needed
       user = await prisma.user.update({
         where: { id: user.id },
         data: {
@@ -90,21 +95,22 @@ exports.googleAuth = async (req, res) => {
         }
       });
     } else {
-      // New user
-      const { classes, course } = req.body;
-      const randomPasswordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+      // New Google user — collect ONLY what Google provides.
+      // Phone, password, classes, degree are collected post-login via profile completion.
+      isNewUser = true;
       user = await prisma.user.create({
         data: {
           name: fullName,
           email,
-          phone: googleId, // Use googleId as phone fallback if phone is required and unique
-          password: randomPasswordHash,
           google_id: googleId,
           profile_image: profileImage,
           role,
           auth_provider: 'google',
-          classes: classes || 'none',
-          degree: course || 'none'
+          password: null,          // No password for Google users initially
+          phone: null,             // Collected post-login
+          classes: null,           // Collected post-login
+          degree: null,            // Collected post-login
+          profileCompleted: false  // Will show completion modal on dashboard
         }
       });
 
@@ -112,13 +118,18 @@ exports.googleAuth = async (req, res) => {
         to: user.email,
         fullName: user.name,
         role
-      }).catch(err => console.error('[MAIL] sendWelcomeEmail failed in background:', err.message));
+      }).catch(err => console.error('[MAIL] sendWelcomeEmail failed:', err.message));
     }
 
     const token = jwt.sign(
-      { id: user.id, role: user.role, userName: user.name },
+      {
+        id: user.id,
+        role: user.role,
+        userName: user.name,
+        profileCompleted: user.profileCompleted
+      },
       process.env.JWT_SECRET,
-      { expiresIn: "24h" }
+      { expiresIn: '24h' }
     );
 
     return res.json({
@@ -129,7 +140,8 @@ exports.googleAuth = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        profile_image: user.profile_image
+        profile_image: user.profile_image,
+        profileCompleted: user.profileCompleted
       }
     });
   } catch (error) {

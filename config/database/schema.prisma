@@ -11,20 +11,21 @@ model User {
   id                        String                     @id @default(uuid())
   email                     String                     @unique
   name                      String
-  password                  String
-  phone                     String                     @unique
+  password                  String?                    // nullable: Google users have no password initially
+  phone                     String?                    @unique // nullable: collected post-Google-signup
   isActive                  Boolean                    @default(true)
   role                      String                     @default("STUDENT")
-  degree                    String
+  degree                    String?                    // nullable: optional for Google users
   createdAt                 DateTime                   @default(now())
   updatedAt                 DateTime                   @updatedAt
-  classes                   String
+  classes                   String?                    // nullable: optional for Google users
   auth_provider             String                     @default("email")
   google_id                 String?
   profile_image             String?
   is_sub_admin              Boolean                    @default(false)
   accountStatus             AccountStatus              @default(ACTIVE)
   isVerified                Boolean                    @default(false)
+  profileCompleted          Boolean                    @default(true)  // false only for new Google signups
   enrollments               Enrollment[]
   attempts                  Attempt[]
   NetworkEventRegistrations NetworkEventRegistration[]
@@ -37,8 +38,6 @@ model User {
   portalRequests            PortalRequest[]
   StaffReviewedActions      StaffPendingAction[]       @relation("StaffActionReviewer")
   StaffPendingActions       StaffPendingAction[]       @relation("StaffActionSubmitter")
-
-  @@unique([email, phone])
 }
 
 model Notification {
