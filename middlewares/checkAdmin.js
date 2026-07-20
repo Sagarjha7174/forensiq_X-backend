@@ -20,14 +20,18 @@ async function checkPermission(req, res, next) {
     });
 
     if (!user) {
+      console.log("checkAdmin: User not found");
       return res.status(404).json({ message: "User not found" });
     }
-    if (user.role === "SUPERADMIN") {
+    
+    console.log("checkAdmin: User role is", user.role);
+    if (user.role === "SUPERADMIN" || user.role === "ADMIN" || user.role === "SUBADMIN") {
       return next();
     }
 
     // Check if the user has the required permissions
     else {
+      console.log("checkAdmin: Access denied for role", user.role);
       return res
         .status(403)
         .json({ message: "Access denied: insufficient permissions" });

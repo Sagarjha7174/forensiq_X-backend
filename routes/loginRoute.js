@@ -8,7 +8,13 @@ require("dotenv").config();
 
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
-  const user = await prismaClient.user.findUnique({ where: { email } });
+  let user;
+  try {
+    user = await prismaClient.user.findUnique({ where: { email } });
+  } catch (err) {
+    console.error("Database error during login:", err.message);
+    return res.status(500).json({ error: "Internal server error. Database unreachable." });
+  }
 
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return res.status(401).json({ error: "Invalid credentials" });

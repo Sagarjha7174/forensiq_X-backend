@@ -13,6 +13,9 @@ const getQuizById = async (req, res) => {
         queCount: true,
         total: true,
         passMark: true,
+        course: {
+          select: { id: true, status: true }
+        },
         questions: {
           select: {
             id: true,
@@ -28,6 +31,36 @@ const getQuizById = async (req, res) => {
     if (!quiz) {
       return res.status(404).json({ error: "Quiz not found" });
     }
+
+    // Admin bypass
+    if (req.user && (req.user.role === "ADMIN" || req.user.role === "SUPERADMIN")) {
+      return res.status(200).json(quiz);
+    }
+
+    // Enrollment check for students
+    let hasAccess = false;
+    for (const course of quiz.course) {
+      if (course.status !== 'ACTIVE') continue;
+      const enrollment = await prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: {
+            userId: req.user.id,
+            courseId: course.id
+          }
+        }
+      });
+      if (enrollment && enrollment.status === 'ACTIVE') {
+        hasAccess = true;
+        break;
+      }
+    }
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: "Forbidden: You do not have an active enrollment for the course containing this quiz." });
+    }
+
+    // Optional: remove the 'course' array from the response to keep the payload clean
+    delete quiz.course;
 
     res.status(200).json(quiz);
   } catch (err) {

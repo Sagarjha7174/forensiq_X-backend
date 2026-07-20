@@ -17,6 +17,7 @@ async function verifyToken(req, res, next) {
     });
 
     if (!user || !user.isActive) {
+      console.log("verifyToken: User not found or inactive, ID:", decoded.id);
       return res
         .status(403)
         .json({ error: "Forbidden: User not found or inactive" });
@@ -25,8 +26,11 @@ async function verifyToken(req, res, next) {
     req.user = user;
     next();
   } catch (err) {
-    console.error("Error verifying token:", err);
-    return res.status(403).json({ error: "Token invalid or expired" });
+    console.error("Error verifying token or fetching user:", err.message);
+    if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+      return res.status(403).json({ error: "Token invalid or expired" });
+    }
+    return res.status(500).json({ error: "Internal server error during authentication" });
   }
 }
 

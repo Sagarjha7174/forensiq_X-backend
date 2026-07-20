@@ -30,6 +30,9 @@ model User {
   NetworkEventRegistrations NetworkEventRegistration[]
   notifications             Notification[]
   payments                  Payment[]
+  createdCoupons            Coupon[] @relation("CouponCreatedBy")
+  updatedCoupons            Coupon[] @relation("CouponUpdatedBy")
+  couponUses                CouponUse[]
   portalMessages            PortalMessage[]
   portalRequests            PortalRequest[]
   StaffReviewedActions      StaffPendingAction[]       @relation("StaffActionReviewer")
@@ -122,6 +125,7 @@ model Course {
   notes       Notes[]
   payments    Payment[]
   enrollments Enrollment[]
+  coupons       Coupon[]  @relation("CourseToCoupon")
   quizess     Quiz[]    @relation("CourseToQuiz")
   
   // CMS Relations
@@ -382,6 +386,11 @@ model Payment {
   course            Course        @relation(fields: [courseId], references: [id])
   user              User          @relation(fields: [userId], references: [id])
   enrollments       Enrollment[]
+  couponId          String?
+  originalAmount    Int?
+  discountAmount    Int?
+  coupon            Coupon?       @relation(fields: [couponId], references: [id])
+  couponUses        CouponUse[]
 
   @@index([userId, courseId])
   @@index([razorpayOrderId])
@@ -510,4 +519,61 @@ enum EnrollmentSource {
   MANUAL
   SCHOLARSHIP
   ADMIN
+}
+
+model Coupon {
+  id                    String        @id @default(uuid())
+  code                  String        @unique
+  title                 String
+  description           String?
+  discountType          DiscountType  @default(PERCENTAGE)
+  discountValue         Int
+  maxDiscountAmount     Int?
+  minimumPurchaseAmount Int?
+  applicableTo          CouponScope   @default(ALL_COURSES)
+  stackable             Boolean       @default(false)
+  firstPurchaseOnly     Boolean       @default(false)
+  validFrom             DateTime?
+  validUntil            DateTime?
+  usageLimit            Int?
+  usedCount             Int           @default(0)
+  perUserLimit          Int           @default(1)
+  isActive              Boolean       @default(true)
+  createdById           String?
+  updatedById           String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  createdBy             User?         @relation("CouponCreatedBy", fields: [createdById], references: [id])
+  updatedBy             User?         @relation("CouponUpdatedBy", fields: [updatedById], references: [id])
+  courses               Course[]      @relation("CourseToCoupon")
+  couponUses            CouponUse[]
+  payments              Payment[]
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_COURSE
+  FLAT_PRICE
+}
+
+enum CouponScope {
+  ALL_COURSES
+  SELECTED_COURSES
+}
+
+model CouponUse {
+  id        String   @id @default(uuid())
+  couponId  String
+  userId    String
+  paymentId String?
+  createdAt DateTime @default(now())
+
+  coupon    Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+
+  @@index([couponId])
+  @@index([userId])
 }

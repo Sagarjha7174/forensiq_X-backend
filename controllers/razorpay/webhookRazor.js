@@ -46,6 +46,33 @@ exports.razorpayWebhook = async (req, res) => {
             status: "SUCCESS"
           }
         });
+
+        // CRITICAL FIX: Create Enrollment
+        await tx.enrollment.create({
+          data: {
+            userId: payment.userId,
+            courseId: payment.courseId,
+            paymentId: payment.id,
+            source: "PURCHASE",
+            status: "ACTIVE"
+          }
+        });
+
+        // Handle Coupon Usage
+        if (payment.couponId) {
+          await tx.coupon.update({
+            where: { id: payment.couponId },
+            data: { usedCount: { increment: 1 } }
+          });
+          
+          await tx.couponUse.create({
+            data: {
+              couponId: payment.couponId,
+              userId: payment.userId,
+              paymentId: payment.id
+            }
+          });
+        }
       });
     }
 

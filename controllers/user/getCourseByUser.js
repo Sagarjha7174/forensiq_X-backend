@@ -9,9 +9,12 @@ const getCourseByUser = async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
-        payments: {
+        enrollments: {
           where: {
-            status: "SUCCESS"
+            status: "ACTIVE",
+            course: {
+              status: "ACTIVE"
+            }
           },
           include: {
             course: {
@@ -30,7 +33,7 @@ const getCourseByUser = async (req, res) => {
     }
 
     // Transform response to return courses directly
-    const courses = user.payments.map(payment => payment.course);
+    const courses = user.enrollments.map(enrollment => enrollment.course);
 
     res.status(200).json({
       userId: user.id,

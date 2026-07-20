@@ -4,13 +4,13 @@ const verifyToken = require("../middlewares/auth");
 const checkAdmin = require("../middlewares/checkAdmin");
 const contentController = require("../controllers/courseContentController");
 
+const checkCourseAccess = require("../middlewares/checkCourseAccess");
+
 // Admin routes
 router.use(verifyToken);
 
-// For student viewing, the course content should be accessible without checkAdmin, 
-// but creation/updating requires admin.
-// Public / Student read routes (might need to check if user enrolled, handled in controller if needed, but for now just read)
-router.get("/:courseId", contentController.getCourseContent);
+// For student viewing, the course content requires enrollment validation
+router.get("/:courseId", checkCourseAccess, contentController.getCourseContent);
 
 // Require admin for the rest
 router.use(checkAdmin);

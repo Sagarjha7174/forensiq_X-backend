@@ -2,21 +2,23 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 async function main() {
-  const enrollment = await prisma.enrollment.findFirst({
-    where: { source: 'ADMIN' },
-  });
-  if (!enrollment) {
-    console.log("No ADMIN enrollment found");
-    return;
+  const enrollment = await prisma.enrollment.findFirst();
+  console.log("Removing enrollment:", enrollment.id);
+  
+  if (enrollment.paymentId && (enrollment.source === 'MANUAL' || enrollment.source === 'ADMIN')) {
+    try {
+      await prisma.payment.delete({ where: { id: enrollment.paymentId } });
+    } catch (err) {
+      console.error("Could not delete associated payment:", err);
+    }
   }
-  console.log("Found:", enrollment);
 
-  // simulate remove
-  if (enrollment.paymentId) {
-    console.log("Deleting payment:", enrollment.paymentId);
-    // await prisma.payment.delete({ where: { id: enrollment.paymentId } });
+  try {
+    await prisma.enrollment.delete({ where: { id: enrollment.id } });
+    console.log("SUCCESS");
+  } catch(e) {
+    console.log("ERROR", e);
   }
-  console.log("Deleting enrollment:", enrollment.id);
-  // await prisma.enrollment.delete({ where: { id: enrollment.id } });
 }
-main().finally(() => prisma.$disconnect());
+
+main().catch(console.error).finally(() => prisma.$disconnect());

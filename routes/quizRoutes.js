@@ -4,8 +4,9 @@ const router = express.Router();
 
 const {createQuiz} = require("../controllers/quiz/createQuiz");
 const {getQuizById} = require("../controllers/quiz/getQuizById");
+const checkAdmin = require("../middlewares/checkAdmin");
 
-router.post("/create", createQuiz);
+router.post("/create", checkAdmin, createQuiz);
 router.get("/get/:quizId", getQuizById);
 
 
