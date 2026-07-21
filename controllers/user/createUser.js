@@ -1,6 +1,5 @@
 const bcrypt = require("bcrypt");
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../../config/database/prismaClient");
 
 const createUser = async (req, res) => {
   const { email, name, password, phone, course, classes, role } = req.body;
@@ -49,11 +48,12 @@ const createSubAdmin = async (req, res) => {
         email,
         name: `${first_name} ${last_name}`.trim(),
         password: hashedPassword,
-        phone: phone || "0000000000",
+        phone: phone && phone.trim() ? phone.trim() : null, // null if not provided (phone is now optional)
         degree: "Admin",
         classes: "Admin",
         role: "ADMIN",
-        is_sub_admin: true
+        is_sub_admin: true,
+        profileCompleted: true // Sub-admins don't need profile completion
       },
     });
 

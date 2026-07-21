@@ -1,5 +1,4 @@
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../../config/database/prismaClient");
 const cloudinary = require("cloudinary").v2;
 
 async function fileuploadtoCloudinary(file, folder, quality) {

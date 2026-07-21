@@ -1,7 +1,6 @@
 // controllers/webhook.controller.js
 const crypto = require("crypto");
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../../config/database/prismaClient");
 
 exports.razorpayWebhook = async (req, res) => {
   try {

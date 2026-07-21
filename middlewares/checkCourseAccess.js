@@ -1,5 +1,4 @@
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../config/database/prismaClient");
 
 /**
  * Middleware to check if the current user has an ACTIVE enrollment for a course.

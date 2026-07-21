@@ -1,6 +1,5 @@
 const bcrypt = require("bcrypt");
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../../config/database/prismaClient");
 
 const changePassword = async (req, res) => {
   const uid = req.user.id;

@@ -21,8 +21,7 @@ router.patch("/:id", updateRequest);
 router.delete("/:id", async (req, res) => {
   // simple delete using prisma inline as it's small, or we could create a controller.
   try {
-    const { PrismaClient } = require("@prisma/client");
-    const prisma = new PrismaClient();
+        const prisma = require("../config/database/prismaClient");
     const { id } = req.params;
     
     // access control
@@ -42,8 +41,7 @@ router.delete("/:id", async (req, res) => {
 
 router.delete("/:id/files/:fileId", async (req, res) => {
   try {
-    const { PrismaClient } = require("@prisma/client");
-    const prisma = new PrismaClient();
+        const prisma = require("../config/database/prismaClient");
     const { id, fileId } = req.params;
 
     const request = await prisma.portalRequest.findUnique({ where: { id } });

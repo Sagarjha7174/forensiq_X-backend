@@ -1,6 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../config/database/prismaClient");
 require("dotenv").config();
 
 async function checkPermission(req, res, next) {

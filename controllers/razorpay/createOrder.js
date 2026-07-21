@@ -1,5 +1,4 @@
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../../config/database/prismaClient");
 const razorpay = require("./../../utils/razorpay");
 const { validateAndCalculateDiscount, CouponValidationError } = require("../../services/couponValidationService");
 
