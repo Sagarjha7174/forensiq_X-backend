@@ -30,7 +30,13 @@ router.post("/login", async (req, res) => {
   }
 
   const token = jwt.sign(
-    { id: user.id, role: user.role, userName: user.name, profileCompleted: user.profileCompleted ?? true },
+    {
+      id: user.id,
+      role: user.is_sub_admin ? 'SUBADMIN' : user.role,
+      userName: user.name,
+      profileCompleted: user.profileCompleted ?? true,
+      is_sub_admin: Boolean(user.is_sub_admin),
+    },
     process.env.JWT_SECRET,
     {
       expiresIn: "24h",
@@ -44,7 +50,8 @@ router.post("/login", async (req, res) => {
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role,
+      role: user.is_sub_admin ? 'SUBADMIN' : user.role,
+      is_sub_admin: Boolean(user.is_sub_admin),
       profileCompleted: user.profileCompleted ?? true
     }
   });
