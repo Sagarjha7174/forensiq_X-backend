@@ -6,6 +6,7 @@ require("dotenv").config();
 const { checkConnection } = require("./utils/checkConnection");
 const routeTable = require("./routes/routeTable");
 const cloudinary = require("./config/cloudinary");
+const { getFrontendUrls } = require("./utils/frontendUrls");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -15,12 +16,14 @@ const PORT = process.env.PORT || 5000;
 ========================= */
 app.use(cors({
   origin: function (origin, callback) {
+      const allowedFrontendUrls = getFrontendUrls();
+
     if (
       !origin || 
       origin.includes('vercel.app') || 
       origin.includes('localhost') || 
       origin.includes('forensiq.in') || 
-      origin === process.env.FRONTEND_URL
+         allowedFrontendUrls.some((allowedOrigin) => origin === allowedOrigin)
     ) {
       callback(null, true);
     } else {

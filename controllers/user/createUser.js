@@ -1,6 +1,7 @@
 const bcrypt = require("bcrypt");
 const prisma = require("../../config/database/prismaClient");
 const { sendSubAdminCredentialsEmail } = require("../../utils/mailService");
+const { getPrimaryFrontendUrl } = require("../../utils/frontendUrls");
 
 const createUser = async (req, res) => {
   const { email, name, password, phone, course, classes, role } = req.body;
@@ -58,7 +59,7 @@ const createSubAdmin = async (req, res) => {
       },
     });
 
-    const loginUrl = process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL.replace(/\/$/, '')}/login` : 'https://forensiq.in/login';
+    const loginUrl = `${getPrimaryFrontendUrl()}/login`;
 
     let emailSent = false;
     try {
