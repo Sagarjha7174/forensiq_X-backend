@@ -221,6 +221,36 @@ exports.sendNotificationEmail = async ({ to, subject, title, message }) => {
 };
 
 /**
+ * Send Sub-Admin Credentials Email
+ */
+exports.sendSubAdminCredentialsEmail = async ({ to, fullName, tempPassword, loginUrl }) => {
+  const userName = fullName || 'User';
+  const subject = 'Your ForensIQ Sub-Admin Account Details';
+  const preheader = 'Your temporary admin credentials are inside this email.';
+  const safeLoginUrl = loginUrl || 'https://forensiq.in/login';
+
+  const content = `
+    <h1>Sub-Admin Account Created</h1>
+    <p>Hi ${userName},</p>
+    <p>Your ForensIQ sub-admin account has been created. Use the temporary password below to sign in and update it after your first login.</p>
+    <div style="background-color: #f1f5f9; border-radius: 8px; padding: 24px; text-align: center; margin: 30px 0; border: 1px dashed #cbd5e1;">
+      <p style="margin: 0 0 8px; color: #64748b; font-size: 14px;">Temporary Password</p>
+      <span style="font-size: 32px; font-weight: 800; letter-spacing: 3px; color: #0a1e3c;">${tempPassword}</span>
+    </div>
+    <p>Sign in here: <a href="${safeLoginUrl}" style="color: #00d1ff;">${safeLoginUrl}</a></p>
+    <p>If you were not expecting this account, please contact support immediately.</p>
+    <p style="margin-top: 30px;">Best regards,<br>The ForensIQ Team</p>
+  `;
+
+  return sendMail({
+    to,
+    subject,
+    html: baseTemplate(content, preheader),
+    text: `Hi ${userName}, your temporary password is: ${tempPassword}. Sign in at ${safeLoginUrl}`,
+  });
+};
+
+/**
  * Send Order Confirmation Email
  */
 exports.orderConfirmationEmail = async ({ to, fullName, details }) => {

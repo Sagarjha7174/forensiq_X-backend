@@ -4,7 +4,7 @@ const {
   listStaffActionHistory,
   reviewStaffAction
 } = require('../controllers/admin/staffApprovalController');
-const { createSubAdmin } = require('../controllers/user/createUser'); // We will create this
+const { createSubAdmin, listSubAdmins } = require('../controllers/user/createUser');
 const { verifyPassword } = require('../controllers/admin/verifyPassword');
 const checkAdmin = require('../middlewares/checkAdmin');
 
@@ -14,6 +14,7 @@ router.use(checkAdmin);
 router.get('/staff-actions/pending', listPendingStaffActions);
 router.get('/staff-actions/history', listStaffActionHistory);
 router.patch('/staff-actions/:id', reviewStaffAction);
+router.get('/sub-admins', listSubAdmins);
 router.post('/sub-admins', createSubAdmin); // Needs implementation
 router.post('/verify-password', verifyPassword);
 router.use('/coupons', require('./adminCouponRoutes'));
