@@ -21,6 +21,9 @@ const deleteUser = async (req, res) => {
 
     // Delete in correct order to respect foreign key constraints
     await prisma.$transaction([
+      prisma.questionAttempt.deleteMany({
+        where: { attempt: { userId: id } },
+      }),
       prisma.couponUse.deleteMany({ where: { userId: id } }),
       prisma.payment.deleteMany({ where: { userId: id } }),
       prisma.attempt.deleteMany({ where: { userId: id } }),
