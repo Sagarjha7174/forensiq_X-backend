@@ -1,4 +1,10 @@
 const prisma = require("../config/database/prismaClient");
+const axios = require('axios');
+
+const extractDriveId = (url) => {
+  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+};
 
 // MODULES
 exports.createModule = async (req, res) => {
@@ -220,3 +226,106 @@ exports.getCourseContent = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// STREAM SECURE PDF RESOURCE
+exports.streamResource = async (req, res) => {
+  try {
+    const { courseId, resourceId } = req.params;
+    const { type } = req.query; // 'cms' or 'legacy'
+    
+    let fileUrl = null;
+
+    if (type === 'legacy') {
+      const course = await prisma.course.findUnique({
+        where: { id: courseId },
+        include: { notes: true }
+      });
+      if (course && course.notes) {
+        const note = course.notes.find(n => n.id === resourceId);
+        if (note) {
+          fileUrl = note.url;
+        }
+      }
+    } else {
+      const resource = await prisma.courseResource.findFirst({
+        where: { id: resourceId, courseId: courseId }
+      });
+      if (resource) {
+        fileUrl = resource.fileUrl;
+      }
+    }
+
+    if (!fileUrl) {
+      return res.status(404).json({ error: "Resource not found" });
+    }
+
+    let streamUrl = fileUrl;
+    const driveId = extractDriveId(fileUrl);
+    
+    if (driveId) {
+      // Force Google Drive download URL format for raw bytes
+      streamUrl = `https://drive.google.com/uc?export=download&id=${driveId}`;
+    }
+
+    // Support HTTP Range Requests for chunked fast loading
+    const headers = {};
+    if (req.headers.range) {
+      headers.Range = req.headers.range;
+    }
+
+    const response = await axios({
+      method: 'get',
+      url: streamUrl,
+      responseType: 'stream',
+      headers,
+      maxRedirects: 5,
+      validateStatus: (status) => status >= 200 && status < 300 // Allow 200 and 206
+    });
+
+    res.status(response.status); // 200 or 206
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="document.pdf"');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Accept-Ranges', 'bytes'); // Tell PDF.js we support chunking
+
+    if (response.headers['content-length']) {
+      res.setHeader('Content-Length', response.headers['content-length']);
+    }
+    
+    if (response.headers['content-range']) {
+      res.setHeader('Content-Range', response.headers['content-range']);
+    }
+
+    response.data.pipe(res);
+  } catch (error) {
+    console.error("=== STREAM RESOURCE FATAL ERROR ===");
+    console.error(error);
+    
+    let errorDetails = error.message;
+    if (error.response) {
+      console.error("6. Error response from external server:");
+      console.error(`Status: ${error.response.status}`);
+      console.error(`Headers:`, error.response.headers);
+      
+      // Attempt to read stream to log body
+      if (error.response.data && typeof error.response.data.read === 'function') {
+        const bodyBuffer = error.response.data.read();
+        if (bodyBuffer) {
+           console.error(`Body:`, bodyBuffer.toString());
+           errorDetails += ` | Body: ${bodyBuffer.toString()}`;
+        } else {
+           console.error("Body could not be read synchronously from stream.");
+        }
+      } else {
+        console.error(`Body:`, error.response.data);
+      }
+    }
+
+    res.status(500).json({ 
+      error: "Failed to stream resource securely.", 
+      message: errorDetails,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+    });
+  }
+};
+

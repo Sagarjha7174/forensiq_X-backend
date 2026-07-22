@@ -46,7 +46,10 @@ const getAllCourses = async (req, res) => {
         include: {
           quizess: true,
           _count: {
-            select: { enrollments: { where: { status: 'ACTIVE' } } }
+            select: { 
+              enrollments: { where: { status: 'ACTIVE' } },
+              modules: true
+            }
           }
         },
       })
@@ -55,6 +58,7 @@ const getAllCourses = async (req, res) => {
     const formattedCourses = courses.map(course => ({
       ...course,
       studentsEnrolled: course._count.enrollments,
+      modulesCount: course._count.modules,
       _count: undefined
     }));
 

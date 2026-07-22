@@ -31,7 +31,8 @@ app.use(cors({
     }
   },
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
 }));
 
 /* =========================
@@ -78,6 +79,10 @@ checkConnection();
 /* =========================
    9️⃣ START SERVER
 ========================= */
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

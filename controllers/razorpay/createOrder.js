@@ -1,6 +1,8 @@
+const { PaymentStatus, EnrollmentStatus, EnrollmentSource } = require("@prisma/client");
 const prisma = require("../../config/database/prismaClient");
 const razorpay = require("./../../utils/razorpay");
 const { validateAndCalculateDiscount, CouponValidationError } = require("../../services/couponValidationService");
+const { orderConfirmationEmail } = require("../../utils/mailService");
 
 exports.createOrder = async (req, res) => {
   try {
@@ -23,7 +25,7 @@ exports.createOrder = async (req, res) => {
       where: {
         userId,
         courseId,
-        status: "SUCCESS"
+        status: PaymentStatus.SUCCESS
       }
     });
 
@@ -40,7 +42,7 @@ exports.createOrder = async (req, res) => {
       where: {
         userId,
         courseId,
-        status: { in: ["CREATED", "FAILED"] }
+        status: { in: [PaymentStatus.CREATED, PaymentStatus.FAILED] }
       }
     });
 
@@ -81,7 +83,7 @@ exports.createOrder = async (req, res) => {
           originalAmount: course.price,
           discountAmount: discountAmount,
           couponId: appliedCouponId,
-          status: "SUCCESS"
+          status: PaymentStatus.SUCCESS
         }
       });
 
@@ -91,8 +93,8 @@ exports.createOrder = async (req, res) => {
           userId,
           courseId,
           paymentId: payment.id,
-          source: "PURCHASE",
-          status: "ACTIVE"
+          source: EnrollmentSource.PURCHASE,
+          status: EnrollmentStatus.ACTIVE
         }
       });
 
@@ -109,6 +111,26 @@ exports.createOrder = async (req, res) => {
             paymentId: payment.id
           }
         });
+      }
+
+      // Send Order Confirmation Email
+      try {
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (user && user.email) {
+          orderConfirmationEmail({
+            to: user.email,
+            fullName: user.name,
+            details: {
+              courseName: course.name,
+              courseDescription: course.description,
+              amount: 0,
+              paymentId: payment.razorpayPaymentId,
+              orderId: payment.razorpayOrderId
+            }
+          }).catch(err => console.error("Failed to send free order email:", err));
+        }
+      } catch (err) {
+        console.error("Error setting up free order email:", err);
       }
 
       return res.json({
@@ -138,7 +160,7 @@ exports.createOrder = async (req, res) => {
         originalAmount: course.price,
         discountAmount: discountAmount,
         couponId: appliedCouponId,
-        status: "CREATED"
+        status: PaymentStatus.CREATED
       }
     });
 

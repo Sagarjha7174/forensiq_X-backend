@@ -62,6 +62,14 @@ const getQuizById = async (req, res) => {
     // Optional: remove the 'course' array from the response to keep the payload clean
     delete quiz.course;
 
+    // Strip answers from questions for non-admins
+    if (!req.user || (req.user.role !== "ADMIN" && req.user.role !== "SUPERADMIN")) {
+      quiz.questions = quiz.questions.map(q => {
+        const { answer, ...qWithoutAnswer } = q;
+        return qWithoutAnswer;
+      });
+    }
+
     res.status(200).json(quiz);
   } catch (err) {
     console.error("Error fetching quiz:", err);

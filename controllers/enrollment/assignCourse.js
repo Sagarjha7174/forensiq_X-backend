@@ -1,4 +1,5 @@
 const prisma = require("../../config/database/prismaClient");
+const { orderConfirmationEmail } = require("../../utils/mailService");
 
 const assignCourse = async (req, res) => {
   try {
@@ -63,6 +64,25 @@ const assignCourse = async (req, res) => {
       });
 
       assigned.push(enrollment);
+
+      // Send Order Confirmation Email
+      if (enrollment.user && enrollment.user.email) {
+        try {
+          await orderConfirmationEmail({
+            to: enrollment.user.email,
+            fullName: enrollment.user.name,
+            details: {
+              courseName: enrollment.course.name,
+              courseDescription: enrollment.course.description,
+              amount: 0,
+              paymentId: payment.razorpayOrderId,
+              orderId: payment.razorpayOrderId
+            }
+          });
+        } catch (err) {
+          console.error(`Failed to send manual assignment email to ${enrollment.user.email}:`, err);
+        }
+      }
     }
 
     res.status(201).json({

@@ -11,6 +11,7 @@ router.use(verifyToken);
 
 // For student viewing, the course content requires enrollment validation
 router.get("/:courseId", checkCourseAccess, contentController.getCourseContent);
+router.get("/:courseId/resource/:resourceId/stream", checkCourseAccess, contentController.streamResource);
 
 // Require admin for the rest
 router.use(checkAdmin);

@@ -12,14 +12,15 @@ const getCourseByUser = async (req, res) => {
           where: {
             status: "ACTIVE",
             course: {
-              status: "ACTIVE"
+              status: { in: ["ACTIVE", "INACTIVE"] }
             }
           },
           include: {
             course: {
               include: {
                 quizess: true,
-                notes: true
+                notes: true,
+                _count: { select: { modules: true } }
               }
             }
           }
@@ -32,7 +33,14 @@ const getCourseByUser = async (req, res) => {
     }
 
     // Transform response to return courses directly
-    const courses = user.enrollments.map(enrollment => enrollment.course);
+    const courses = user.enrollments.map(enrollment => {
+      const course = enrollment.course;
+      return {
+        ...course,
+        modulesCount: course._count?.modules,
+        _count: undefined
+      };
+    });
 
     res.status(200).json({
       userId: user.id,

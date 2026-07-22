@@ -1,11 +1,13 @@
 
-
 const prisma = require("../../config/database/prismaClient");
 
 
 exports.getAllUser = async (req, res) => {
   try {
-    const { role, accountStatus, isVerified, search, sort = 'newest', page = 1, limit = 50 } = req.query;
+    const { role, accountStatus, isVerified, search, sort = 'newest', page = 1, limit = 10000 } = req.query;
+
+    // Allow limit=all as a shorthand for no limit
+    const effectiveLimit = limit === 'all' ? 100000 : Number(limit);
 
     const where = {};
     if (role) where.role = role;
@@ -25,7 +27,7 @@ exports.getAllUser = async (req, res) => {
     else if (sort === 'name-asc') orderBy = { name: 'asc' };
     else if (sort === 'name-desc') orderBy = { name: 'desc' };
 
-    const skip = (Number(page) - 1) * Number(limit);
+    const skip = (Number(page) - 1) * effectiveLimit;
 
     const [total, users] = await prisma.$transaction([
       prisma.user.count({ where }),
@@ -33,7 +35,7 @@ exports.getAllUser = async (req, res) => {
         where,
         orderBy,
         skip,
-        take: Number(limit),
+        take: effectiveLimit,
         include: {
           enrollments: {
             where: { status: 'ACTIVE' },
@@ -54,8 +56,8 @@ exports.getAllUser = async (req, res) => {
       meta: {
         total,
         page: Number(page),
-        limit: Number(limit),
-        totalPages: Math.ceil(total / Number(limit))
+        limit: effectiveLimit,
+        totalPages: Math.ceil(total / effectiveLimit)
       }
     });
   } catch (error) {

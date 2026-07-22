@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt");
+const { PaymentStatus, EnrollmentStatus, EnrollmentSource } = require("@prisma/client");
 const prisma = require("../../config/database/prismaClient");
 
 const updateUser = async (req, res) => {
@@ -78,7 +79,7 @@ const updateUser = async (req, res) => {
               userId: uid,
               courseId,
               amount: 0,
-              status: "SUCCESS",
+              status: PaymentStatus.SUCCESS,
               razorpayOrderId: `ADMIN_${uid}_${courseId}_${Date.now()}`
             }
           });
@@ -89,8 +90,8 @@ const updateUser = async (req, res) => {
               userId: uid,
               courseId,
               paymentId: payment.id,
-              source: "ADMIN",
-              status: "ACTIVE",
+              source: EnrollmentSource.ADMIN,
+              status: EnrollmentStatus.ACTIVE,
               activatedAt: new Date()
             }
           });
