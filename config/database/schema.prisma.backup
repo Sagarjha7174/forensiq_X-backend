@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DB_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "mysql"
+  url      = env("DB_URL")
 }
 
 model User {
@@ -51,7 +50,7 @@ model Notification {
   created_at DateTime @default(now())
   user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  @@index([user_id])
+  @@index([user_id], map: "Notification_user_id_fkey")
 }
 
 model PasswordResetOtp {
@@ -77,8 +76,8 @@ model StaffPendingAction {
   reviewer      User?     @relation("StaffActionReviewer", fields: [reviewed_by], references: [id])
   submitter     User      @relation("StaffActionSubmitter", fields: [submitted_by], references: [id], onDelete: Cascade)
 
-  @@index([reviewed_by])
-  @@index([submitted_by])
+  @@index([reviewed_by], map: "StaffPendingAction_reviewed_by_fkey")
+  @@index([submitted_by], map: "StaffPendingAction_submitted_by_fkey")
 }
 
 model NetworkEvent {
@@ -106,7 +105,7 @@ model NetworkEventRegistration {
   user       User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@unique([event_id, user_id])
-  @@index([user_id])
+  @@index([user_id], map: "NetworkEventRegistration_user_id_fkey")
 }
 
 model Course {
@@ -273,7 +272,7 @@ model Notes {
   updatedAt   DateTime @updatedAt
   course      Course   @relation(fields: [courseId], references: [id])
 
-  @@index([courseId])
+  @@index([courseId], map: "Notes_courseId_fkey")
 }
 
 model announcement {
@@ -507,7 +506,7 @@ model PortalMessage {
   user           User          @relation(fields: [userId], references: [id])
 
   @@index([requestId])
-  @@index([userId])
+  @@index([userId], map: "PortalMessage_userId_fkey")
 }
 
 model PortalFile {
