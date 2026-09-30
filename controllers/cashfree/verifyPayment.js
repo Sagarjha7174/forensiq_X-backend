@@ -8,21 +8,34 @@ exports.verifyPayment = async (req, res) => {
     const { orderId } = req.body;
     const userId = req.user.id;
 
+    console.log("[verifyPayment] Called with orderId:", orderId, "userId:", userId);
+
     if (!orderId) {
       return res.status(400).json({ error: "Missing Cashfree order ID" });
     }
 
     // Fetch the payment details from Cashfree to verify
-    const response = await Cashfree.PGOrderFetchPayments(orderId);
+    let response;
+    try {
+      response = await Cashfree.PGOrderFetchPayments(orderId);
+      console.log("[verifyPayment] Cashfree API raw response:", JSON.stringify(response?.data || response, null, 2));
+    } catch (cfErr) {
+      console.error("[verifyPayment] Cashfree API error:", cfErr?.response?.data || cfErr);
+      return res.status(502).json({ error: "Failed to fetch payment status from Cashfree" });
+    }
     
-    // PGOrderFetchPayments returns an array of payments. Find the successful one.
-    const payments = response.data;
+    // PGOrderFetchPayments returns data in different shapes depending on SDK version
+    const payments = Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []);
+    console.log("[verifyPayment] Payments array length:", payments.length);
+    
     const successfulPayment = payments.find(p => p.payment_status === "SUCCESS");
 
     if (!successfulPayment) {
+      console.log("[verifyPayment] No successful payment found. Statuses:", payments.map(p => p.payment_status));
       return res.status(400).json({ error: "Payment not successful on Cashfree's end" });
     }
 
+    console.log("[verifyPayment] Found successful payment:", successfulPayment.cf_payment_id);
     const cashfreePaymentId = String(successfulPayment.cf_payment_id);
 
     // Fetch payment details outside transaction for fallback email
@@ -31,7 +44,12 @@ exports.verifyPayment = async (req, res) => {
       include: { user: true, course: true }
     });
 
-    if (!payment) return res.status(404).json({ error: "Payment record not found" });
+    if (!payment) {
+      console.log("[verifyPayment] No payment record in DB for orderId:", orderId);
+      return res.status(404).json({ error: "Payment record not found" });
+    }
+
+    console.log("[verifyPayment] DB payment status:", payment.status, "id:", payment.id);
 
     // Idempotency check: if already processed
     if (payment.status === PaymentStatus.SUCCESS) {
@@ -45,6 +63,7 @@ exports.verifyPayment = async (req, res) => {
       completedPaymentDetails = await prisma.$transaction(async (tx) => {
         const currentPayment = await tx.payment.findUnique({ where: { id: payment.id } });
         if (currentPayment.status === PaymentStatus.SUCCESS) {
+          console.log("[verifyPayment] Already SUCCESS inside transaction");
           return null;
         }
 
@@ -57,13 +76,14 @@ exports.verifyPayment = async (req, res) => {
           }
         });
 
+        console.log("[verifyPayment] Payment update count:", updateResult.count);
+
         if (updateResult.count === 0) {
-          // Another process (e.g., webhook) already updated this payment
           return null;
         }
 
         // Create Enrollment
-        await tx.enrollment.create({
+        const enrollment = await tx.enrollment.create({
           data: {
             userId: payment.userId,
             courseId: payment.courseId,
@@ -72,6 +92,8 @@ exports.verifyPayment = async (req, res) => {
             status: EnrollmentStatus.ACTIVE
           }
         });
+
+        console.log("[verifyPayment] ✅ Enrollment created:", enrollment.id);
 
         // Handle Coupon Usage
         if (payment.couponId) {
@@ -92,11 +114,13 @@ exports.verifyPayment = async (req, res) => {
         return payment;
       });
     } catch (txErr) {
-      console.error("Enrollment transaction failed in verifyPayment:", txErr);
+      console.error("[verifyPayment] Enrollment transaction failed:", txErr);
       transactionError = txErr;
     }
 
-    // Send Order Confirmation Email if this request actually processed the payment successfully
+    console.log("[verifyPayment] Transaction result:", completedPaymentDetails ? "SUCCESS" : "NULL", "Error:", !!transactionError);
+
+    // Send Order Confirmation Email
     if (completedPaymentDetails && completedPaymentDetails.user && completedPaymentDetails.user.email) {
       orderConfirmationEmail({
         to: completedPaymentDetails.user.email,
@@ -110,14 +134,12 @@ exports.verifyPayment = async (req, res) => {
         }
       }).catch(err => console.error("Failed to send frontend verify order email:", err));
     } else if (transactionError) {
-      // Concurrency check: Did the webhook process this exactly at the same time?
       const checkPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
       if (checkPayment && checkPayment.status === PaymentStatus.SUCCESS) {
         console.log("Transaction failed but payment is already SUCCESS (handled by webhook).");
         return res.json({ success: true, message: "Payment verified successfully" });
       }
 
-      // Payment was captured, but our enrollment transaction truly failed!
       if (payment.user && payment.user.email) {
         paymentIssueEmail({
           to: payment.user.email,
