@@ -80,7 +80,7 @@ const updateUser = async (req, res) => {
               courseId,
               amount: 0,
               status: PaymentStatus.SUCCESS,
-              razorpayOrderId: `ADMIN_${uid}_${courseId}_${Date.now()}`
+              cashfreeOrderId: `ADMIN_${uid}_${courseId}_${Date.now()}`
             }
           });
 

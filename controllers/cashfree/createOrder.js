@@ -1,6 +1,6 @@
 const { PaymentStatus, EnrollmentStatus, EnrollmentSource } = require("@prisma/client");
 const prisma = require("../../config/database/prismaClient");
-const razorpay = require("./../../utils/razorpay");
+const Cashfree = require("../../utils/cashfree");
 const { validateAndCalculateDiscount, CouponValidationError } = require("../../services/couponValidationService");
 const { orderConfirmationEmail } = require("../../utils/mailService");
 
@@ -8,7 +8,6 @@ exports.createOrder = async (req, res) => {
   try {
     const userId = req.user.id;
     const { courseId, couponCode } = req.body;
-
 
     const course = await prisma.course.findUnique({
       where: { id: courseId }
@@ -18,9 +17,8 @@ exports.createOrder = async (req, res) => {
       return res.status(404).json({ error: "Course not found" });
     }
 
-    /* =========================
-       1️⃣ Block if already purchased
-    ========================= */
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+
     const alreadyPurchased = await prisma.payment.findFirst({
       where: {
         userId,
@@ -35,9 +33,6 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    /* =========================
-       2️⃣ Cleanup old attempts
-    ========================= */
     await prisma.payment.deleteMany({
       where: {
         userId,
@@ -46,9 +41,6 @@ exports.createOrder = async (req, res) => {
       }
     });
 
-    /* =========================
-       2.5️⃣ Validate Coupon (If provided)
-    ========================= */
     let finalAmount = course.price;
     let discountAmount = 0;
     let appliedCouponId = null;
@@ -67,18 +59,13 @@ exports.createOrder = async (req, res) => {
       }
     }
 
-    // Edge Case: If final amount is 0 (Free Course), we might bypass Razorpay entirely.
-    // For now, Razorpay has a minimum order amount (usually 1 INR). 
-    // If finalAmount === 0, we can directly create SUCCESS payment and trigger webhook/enrollment logic manually.
-    // However, Razorpay does NOT allow 0 amount orders.
     if (finalAmount === 0) {
-      // Create SUCCESS payment directly
       const payment = await prisma.payment.create({
         data: {
           userId,
           courseId,
-          razorpayOrderId: `free_${Date.now()}_${userId}`,
-          razorpayPaymentId: `free_${Date.now()}`,
+          cashfreeOrderId: `free_${Date.now()}_${userId}`,
+          cashfreePaymentId: `free_${Date.now()}`,
           amount: 0,
           originalAmount: course.price,
           discountAmount: discountAmount,
@@ -87,7 +74,6 @@ exports.createOrder = async (req, res) => {
         }
       });
 
-      // Create Enrollment
       await prisma.enrollment.create({
         data: {
           userId,
@@ -98,7 +84,6 @@ exports.createOrder = async (req, res) => {
         }
       });
 
-      // Create CouponUse
       if (appliedCouponId) {
         await prisma.coupon.update({
           where: { id: appliedCouponId },
@@ -113,24 +98,18 @@ exports.createOrder = async (req, res) => {
         });
       }
 
-      // Send Order Confirmation Email
-      try {
-        const user = await prisma.user.findUnique({ where: { id: userId } });
-        if (user && user.email) {
-          orderConfirmationEmail({
-            to: user.email,
-            fullName: user.name,
-            details: {
-              courseName: course.name,
-              courseDescription: course.description,
-              amount: 0,
-              paymentId: payment.razorpayPaymentId,
-              orderId: payment.razorpayOrderId
-            }
-          }).catch(err => console.error("Failed to send free order email:", err));
-        }
-      } catch (err) {
-        console.error("Error setting up free order email:", err);
+      if (user && user.email) {
+        orderConfirmationEmail({
+          to: user.email,
+          fullName: user.name,
+          details: {
+            courseName: course.name,
+            courseDescription: course.description,
+            amount: 0,
+            paymentId: payment.cashfreePaymentId,
+            orderId: payment.cashfreeOrderId
+          }
+        }).catch(err => console.error("Failed to send free order email:", err));
       }
 
       return res.json({
@@ -139,23 +118,27 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    /* =========================
-       3️⃣ Create fresh Razorpay order
-    ========================= */
-    const order = await razorpay.orders.create({
-      amount: finalAmount * 100, // paise
-      currency: "INR",
-      receipt: `rcpt_${Date.now()}`
-    });
+    // Cashfree minimum amount is generally ₹1
+    const orderId = `cf_${Date.now()}_${userId.slice(0, 10)}`;
+    const request = {
+      order_amount: finalAmount, // Cashfree expects amount in rupees, not paise
+      order_currency: "INR",
+      order_id: orderId,
+      customer_details: {
+        customer_id: userId,
+        customer_phone: user.phone || "9999999999",
+        customer_email: user.email,
+        customer_name: user.name
+      }
+    };
 
-    /* =========================
-       4️⃣ Store payment attempt
-    ========================= */
+    const response = await Cashfree.PGCreateOrder(request);
+
     await prisma.payment.create({
       data: {
         userId,
         courseId,
-        razorpayOrderId: order.id,
+        cashfreeOrderId: orderId,
         amount: finalAmount,
         originalAmount: course.price,
         discountAmount: discountAmount,
@@ -164,18 +147,15 @@ exports.createOrder = async (req, res) => {
       }
     });
 
-    /* =========================
-       5️⃣ Send to frontend
-    ========================= */
     res.json({
-      orderId: order.id,
+      orderId: orderId,
+      paymentSessionId: response.data.payment_session_id,
       amount: finalAmount,
       originalAmount: course.price,
-      discountAmount,
-      key: process.env.RAZORPAY_KEY_ID
+      discountAmount
     });
   } catch (err) {
-    console.error("Create order error:", err);
+    console.error("Create order error:", err.response?.data || err);
     res.status(500).json({ error: "Failed to create order" });
   }
 };

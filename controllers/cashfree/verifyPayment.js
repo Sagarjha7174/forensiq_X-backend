@@ -1,29 +1,33 @@
 const { PaymentStatus, EnrollmentStatus, EnrollmentSource } = require("@prisma/client");
-const crypto = require("crypto");
 const prisma = require("../../config/database/prismaClient");
+const Cashfree = require("../../utils/cashfree");
 const { orderConfirmationEmail, paymentIssueEmail } = require("../../utils/mailService");
 
 exports.verifyPayment = async (req, res) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+    const { orderId } = req.body;
     const userId = req.user.id;
 
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      return res.status(400).json({ error: "Missing Razorpay payment details" });
+    if (!orderId) {
+      return res.status(400).json({ error: "Missing Cashfree order ID" });
     }
 
-    const generatedSignature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest("hex");
+    // Fetch the payment details from Cashfree to verify
+    const response = await Cashfree.PGOrderFetchPayments(orderId);
+    
+    // PGOrderFetchPayments returns an array of payments. Find the successful one.
+    const payments = response.data;
+    const successfulPayment = payments.find(p => p.payment_status === "SUCCESS");
 
-    if (generatedSignature !== razorpay_signature) {
-      return res.status(400).json({ error: "Invalid payment signature" });
+    if (!successfulPayment) {
+      return res.status(400).json({ error: "Payment not successful on Cashfree's end" });
     }
+
+    const cashfreePaymentId = String(successfulPayment.cf_payment_id);
 
     // Fetch payment details outside transaction for fallback email
     const payment = await prisma.payment.findFirst({
-      where: { razorpayOrderId: razorpay_order_id, userId },
+      where: { cashfreeOrderId: orderId, userId },
       include: { user: true, course: true }
     });
 
@@ -48,7 +52,7 @@ exports.verifyPayment = async (req, res) => {
         const updateResult = await tx.payment.updateMany({
           where: { id: payment.id, status: PaymentStatus.CREATED },
           data: {
-            razorpayPaymentId: razorpay_payment_id,
+            cashfreePaymentId: cashfreePaymentId,
             status: PaymentStatus.SUCCESS
           }
         });
@@ -101,8 +105,8 @@ exports.verifyPayment = async (req, res) => {
           courseName: completedPaymentDetails.course.name,
           courseDescription: completedPaymentDetails.course.description,
           amount: completedPaymentDetails.amount,
-          paymentId: razorpay_payment_id,
-          orderId: razorpay_order_id
+          paymentId: cashfreePaymentId,
+          orderId: orderId
         }
       }).catch(err => console.error("Failed to send frontend verify order email:", err));
     } else if (transactionError) {
@@ -113,8 +117,7 @@ exports.verifyPayment = async (req, res) => {
         return res.json({ success: true, message: "Payment verified successfully" });
       }
 
-      // Payment was captured by Razorpay, but our enrollment transaction truly failed!
-      // Send a Payment Issue email to alert the student and admin.
+      // Payment was captured, but our enrollment transaction truly failed!
       if (payment.user && payment.user.email) {
         paymentIssueEmail({
           to: payment.user.email,
@@ -122,19 +125,18 @@ exports.verifyPayment = async (req, res) => {
           details: {
             courseName: payment.course.name,
             amount: payment.amount,
-            paymentId: razorpay_payment_id,
-            orderId: razorpay_order_id
+            paymentId: cashfreePaymentId,
+            orderId: orderId
           }
         }).catch(err => console.error("Failed to send payment issue email:", err));
       }
       
-      // Return a gentle error message instead of raw Prisma error
       return res.status(500).json({ error: "Payment was captured but an issue occurred during enrollment. Our team has been notified." });
     }
 
     res.json({ success: true, message: "Payment verified successfully" });
   } catch (err) {
-    console.error("Verify payment error:", err);
+    console.error("Verify payment error:", err.response?.data || err);
     res.status(500).json({ error: err.message || "Failed to verify payment" });
   }
 };

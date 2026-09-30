@@ -378,8 +378,8 @@ model Payment {
   id                String        @id @default(uuid())
   userId            String
   courseId          String
-  razorpayOrderId   String        @unique
-  razorpayPaymentId String?       @unique
+  cashfreeOrderId   String        @unique
+  cashfreePaymentId String?       @unique
   status            PaymentStatus
   amount            Int
   createdAt         DateTime      @default(now())
@@ -393,7 +393,7 @@ model Payment {
   couponUses        CouponUse[]
 
   @@index([userId, courseId])
-  @@index([razorpayOrderId])
+  @@index([cashfreeOrderId])
   @@index([courseId])
   @@index([userId])
 }

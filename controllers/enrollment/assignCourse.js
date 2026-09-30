@@ -47,7 +47,7 @@ const assignCourse = async (req, res) => {
           courseId,
           amount: 0,
           status: 'SUCCESS',
-          razorpayOrderId: `MANUAL_${Date.now()}_${userId.substring(0, 5)}`
+          cashfreeOrderId: `MANUAL_${Date.now()}_${userId.substring(0, 5)}`
         }
       });
 
@@ -75,8 +75,8 @@ const assignCourse = async (req, res) => {
               courseName: enrollment.course.name,
               courseDescription: enrollment.course.description,
               amount: 0,
-              paymentId: payment.razorpayOrderId,
-              orderId: payment.razorpayOrderId
+              paymentId: payment.cashfreeOrderId,
+              orderId: payment.cashfreeOrderId
             }
           });
         } catch (err) {

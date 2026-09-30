@@ -2,31 +2,34 @@ const { PaymentStatus, EnrollmentStatus, EnrollmentSource } = require("@prisma/c
 const crypto = require("crypto");
 const prisma = require("../../config/database/prismaClient");
 const { orderConfirmationEmail, paymentIssueEmail } = require("../../utils/mailService");
+const Cashfree = require("../../utils/cashfree");
+const { CFEnvironment } = require("cashfree-pg");
 
-exports.razorpayWebhook = async (req, res) => {
+exports.cashfreeWebhook = async (req, res) => {
   try {
-    const signature = req.headers["x-razorpay-signature"];
+    const rawBody = req.rawBody || JSON.stringify(req.body);
+    const signature = req.headers["x-webhook-signature"];
+    const timestamp = req.headers["x-webhook-timestamp"];
 
-    const expectedSignature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_WEBHOOK_SECRET)
-      .update(req.body)
-      .digest("hex");
-
-    if (signature !== expectedSignature) {
-      return res.status(400).json({ error: "Invalid webhook signature" });
+    try {
+        Cashfree.PGVerifyWebhookSignature(signature, rawBody, timestamp);
+    } catch (err) {
+        return res.status(400).json({ error: "Invalid webhook signature" });
     }
 
-    const event = JSON.parse(req.body.toString());
+    const event = req.body;
 
     /* =========================
        ✅ PAYMENT SUCCESS
     ========================= */
-    if (event.event === "payment.captured") {
-      const p = event.payload.payment.entity;
+    if (event.type === "PAYMENT_SUCCESS_WEBHOOK") {
+      const p = event.data.payment;
+      const orderId = event.data.order.order_id;
+      const paymentId = String(p.cf_payment_id);
 
       // Fetch payment first for fallback email
       const payment = await prisma.payment.findFirst({
-        where: { razorpayOrderId: p.order_id },
+        where: { cashfreeOrderId: orderId },
         include: { user: true, course: true }
       });
 
@@ -36,7 +39,7 @@ exports.razorpayWebhook = async (req, res) => {
       if (payment.status === PaymentStatus.SUCCESS) return res.json({ status: "ignored - already success" });
 
       // Security: amount check
-      if (payment.amount*100 !== p.amount) {
+      if (payment.amount !== p.payment_amount) {
         throw new Error("Amount mismatch");
       }
 
@@ -52,7 +55,7 @@ exports.razorpayWebhook = async (req, res) => {
         const updateResult = await tx.payment.updateMany({
           where: { id: payment.id, status: PaymentStatus.CREATED },
           data: {
-            razorpayPaymentId: p.id,
+            cashfreePaymentId: paymentId,
             status: PaymentStatus.SUCCESS
           }
         });
@@ -92,7 +95,7 @@ exports.razorpayWebhook = async (req, res) => {
           return payment;
         });
       } catch (txErr) {
-        console.error("Enrollment transaction failed in webhookRazor:", txErr);
+        console.error("Enrollment transaction failed in webhookCashfree:", txErr);
         transactionError = txErr;
       }
 
@@ -106,8 +109,8 @@ exports.razorpayWebhook = async (req, res) => {
               courseName: completedPaymentDetails.course.name,
               courseDescription: completedPaymentDetails.course.description,
               amount: completedPaymentDetails.amount,
-              paymentId: p.id,
-              orderId: p.order_id
+              paymentId: paymentId,
+              orderId: orderId
             }
           }).catch(err => console.error("Failed to send webhook order email:", err));
         } catch (err) {
@@ -121,7 +124,7 @@ exports.razorpayWebhook = async (req, res) => {
           return res.json({ status: "ok", message: "Handled by frontend concurrently" });
         }
 
-        // Transaction failed but payment was captured in Razorpay
+        // Transaction failed but payment was captured
         if (payment.user && payment.user.email) {
           try {
             paymentIssueEmail({
@@ -130,8 +133,8 @@ exports.razorpayWebhook = async (req, res) => {
               details: {
                 courseName: payment.course.name,
                 amount: payment.amount,
-                paymentId: p.id,
-                orderId: p.order_id
+                paymentId: paymentId,
+                orderId: orderId
               }
             }).catch(err => console.error("Failed to send webhook payment issue email:", err));
           } catch (err) {
@@ -146,12 +149,13 @@ exports.razorpayWebhook = async (req, res) => {
     /* =========================
        ❌ PAYMENT FAILED
     ========================= */
-    if (event.event === "payment.failed") {
-      const p = event.payload.payment.entity;
+    if (event.type === "PAYMENT_FAILED_WEBHOOK") {
+      const p = event.data.payment;
+      const orderId = event.data.order.order_id;
 
       await prisma.payment.updateMany({
         where: {
-          razorpayOrderId: p.order_id,
+          cashfreeOrderId: orderId,
           status: { not: PaymentStatus.SUCCESS } // 🔒 do not downgrade
         },
         data: { status: PaymentStatus.FAILED }

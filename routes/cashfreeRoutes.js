@@ -2,8 +2,8 @@ const express = require("express");
 const router = express.Router();
 
 
-const { createOrder } = require("../controllers/razorpay/createOrder");
-const { verifyPayment } = require("../controllers/razorpay/verifyPayment");
+const { createOrder } = require("../controllers/cashfree/createOrder");
+const { verifyPayment } = require("../controllers/cashfree/verifyPayment");
 const verifyToken = require("../middlewares/auth");
 
 

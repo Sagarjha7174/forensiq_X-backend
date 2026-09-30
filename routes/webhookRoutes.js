@@ -2,13 +2,13 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const router = express.Router();
 
-const { razorpayWebhook } = require("../controllers/razorpay/webhookRazor");
+const { cashfreeWebhook } = require("../controllers/cashfree/webhookCashfree");
 
 // ❗ NO verifyToken here
 router.post(
-  "/razorpay",
+  "/cashfree",
   bodyParser.raw({ type: "application/json" }),
-  razorpayWebhook
+  cashfreeWebhook
 );
 
 module.exports = router;

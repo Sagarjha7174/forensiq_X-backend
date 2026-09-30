@@ -36,7 +36,7 @@ app.use(cors({
 }));
 
 /* =========================
-   2️⃣ RAZORPAY WEBHOOK (RAW BODY)
+   2️⃣ CASHFREE WEBHOOK (RAW BODY)
    ⚠️ MUST COME BEFORE express.json()
 ========================= */
 app.use("/api/webhooks", require("./routes/webhookRoutes"));
