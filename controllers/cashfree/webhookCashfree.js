@@ -107,8 +107,9 @@ exports.cashfreeWebhook = async (req, res) => {
             fullName: completedPaymentDetails.user.name,
             details: {
               courseName: completedPaymentDetails.course.name,
-              courseDescription: completedPaymentDetails.course.description,
               amount: completedPaymentDetails.amount,
+              originalAmount: completedPaymentDetails.originalAmount || completedPaymentDetails.amount,
+              discountAmount: completedPaymentDetails.discountAmount || 0,
               paymentId: paymentId,
               orderId: orderId
             }

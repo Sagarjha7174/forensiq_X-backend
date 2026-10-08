@@ -12,7 +12,7 @@ const getCourseByUser = async (req, res) => {
           where: {
             status: "ACTIVE",
             course: {
-              status: { in: ["ACTIVE", "INACTIVE"] }
+              status: { in: ["ACTIVE", "INACTIVE", "DRAFT"] }
             }
           },
           include: {

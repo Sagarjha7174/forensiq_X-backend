@@ -104,10 +104,12 @@ exports.createOrder = async (req, res) => {
           fullName: user.name,
           details: {
             courseName: course.name,
-            courseDescription: course.description,
             amount: 0,
+            originalAmount: course.price,
+            discountAmount: discountAmount,
             paymentId: payment.cashfreePaymentId,
-            orderId: payment.cashfreeOrderId
+            orderId: payment.cashfreeOrderId,
+            couponCode: couponCode || null,
           }
         }).catch(err => console.error("Failed to send free order email:", err));
       }

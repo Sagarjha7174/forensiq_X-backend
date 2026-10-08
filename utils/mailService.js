@@ -69,7 +69,7 @@ const baseTemplate = (content, preheader = '') => `
 </html>
 `;
 
-const sendMail = async ({ to, subject, html, text }) => {
+const sendMail = async ({ to, subject, html, text, attachments }) => {
   const mailOptions = {
     from: `"${process.env.MAIL_FROM_NAME || 'FORENSIQ'}" <${process.env.MAIL_FROM_ADDRESS || process.env.SMTP_USER}>`,
     to,
@@ -77,6 +77,10 @@ const sendMail = async ({ to, subject, html, text }) => {
     html,
     text: text || 'Please view this email in an HTML compatible client.',
   };
+
+  if (attachments && attachments.length > 0) {
+    mailOptions.attachments = attachments;
+  }
 
   try {
     const info = await transporter.sendMail(mailOptions);
@@ -251,13 +255,13 @@ exports.sendSubAdminCredentialsEmail = async ({ to, fullName, tempPassword, logi
 };
 
 /**
- * Send Order Confirmation Email
+ * Send Order Confirmation Email — Simple notification + Invoice PDF attachment
  */
 exports.orderConfirmationEmail = async ({ to, fullName, details }) => {
-  const { courseName, courseDescription, amount, paymentId, orderId } = details;
+  const { courseName, amount, paymentId, orderId, originalAmount, discountAmount, couponCode } = details;
   const userName = fullName || 'Learner';
-  const subject = `Payment Confirmed - ${courseName}`;
-  const preheader = 'Your enrollment is active.';
+  const subject = `Payment Confirmed — ${courseName}`;
+  const preheader = 'Your enrollment is now active. Invoice attached.';
 
   const amountFormatted = new Intl.NumberFormat('en-IN', {
     style: 'currency',
@@ -266,51 +270,61 @@ exports.orderConfirmationEmail = async ({ to, fullName, details }) => {
   }).format(Number(amount) || 0);
 
   const content = `
-    <h1>Payment Successful</h1>
+    <h1>Payment Successful 🎉</h1>
     <p>Hi ${userName},</p>
-    <p>Thank you for your purchase. Your payment was successful, and your enrollment for <strong>${courseName}</strong> is now active.</p>
+    <p>Your payment of <strong>${amountFormatted}</strong> for <strong>${courseName}</strong> has been received successfully.</p>
+    <p>Your enrollment is now <strong>active</strong> — you can start learning right away!</p>
     
-    <div style="background-color: #f8fafc; border-radius: 8px; padding: 24px; margin: 30px 0; border: 1px solid #e2e8f0;">
-      <h3 style="margin-top: 0; color: #0a1e3c; border-bottom: 1px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 16px;">Order Summary</h3>
-      <table style="width: 100%; border-collapse: collapse;">
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; width: 40%;">Course:</td>
-          <td style="padding: 8px 0; font-weight: 600; color: #1f2937;">${courseName}</td>
-        </tr>
-        ${courseDescription ? `
-        <tr>
-          <td style="padding: 8px 0; color: #64748b;">Description:</td>
-          <td style="padding: 8px 0; color: #1f2937;">${courseDescription}</td>
-        </tr>
-        ` : ''}
-        <tr>
-          <td style="padding: 8px 0; color: #64748b;">Amount Paid:</td>
-          <td style="padding: 8px 0; font-weight: 600; color: #10b981;">${amountFormatted}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b;">Payment ID:</td>
-          <td style="padding: 8px 0; font-family: monospace; color: #475569;">${paymentId || 'N/A'}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; border-bottom: none;">Order ID:</td>
-          <td style="padding: 8px 0; font-family: monospace; color: #475569; border-bottom: none;">${orderId || 'N/A'}</td>
-        </tr>
-      </table>
+    <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin: 24px 0; text-align: center;">
+      <p style="margin: 0; color: #166534; font-weight: 600; font-size: 16px;">✅ Course Enrolled Successfully</p>
     </div>
 
     <div style="text-align: center; margin: 30px 0;">
-      <a href="https://forensiq.in/dashboard/courses" class="btn">Start Learning Now</a>
+      <a href="https://forensiq.in/dashboard" class="btn">Go to Dashboard</a>
     </div>
-    
-    <p>Keep this email for your records. If you have any issues accessing your course, please contact support.</p>
+
+    <p style="font-size: 14px; color: #64748b;">Your tax invoice is attached to this email as a PDF for your records.</p>
     <p style="margin-top: 30px;">Happy Learning,<br>The FORENSIQ Team</p>
   `;
+
+  // Generate invoice PDF
+  let attachments = [];
+  try {
+    const { generateInvoicePDF } = require('./invoiceGenerator');
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    const pdfBuffer = await generateInvoicePDF({
+      invoiceNumber: `INV-${orderId || Date.now()}`,
+      date: dateStr,
+      customerName: userName,
+      customerEmail: to,
+      courseName: courseName,
+      originalAmount: originalAmount || amount,
+      discountAmount: discountAmount || 0,
+      finalAmount: amount,
+      paymentId: paymentId || 'N/A',
+      orderId: orderId || 'N/A',
+      couponCode: couponCode || null,
+    });
+
+    attachments.push({
+      filename: `FORENSIQ-Invoice-${orderId || Date.now()}.pdf`,
+      content: pdfBuffer,
+      contentType: 'application/pdf',
+    });
+    console.log('[MAIL] Invoice PDF generated successfully.');
+  } catch (pdfErr) {
+    console.error('[MAIL] Failed to generate invoice PDF:', pdfErr.message);
+    // Still send the email without attachment
+  }
 
   return sendMail({
     to,
     subject,
     html: baseTemplate(content, preheader),
-    text: `Hi ${userName}, your payment for ${courseName} is confirmed. Amount Paid: ${amountFormatted}. Payment ID: ${paymentId}`,
+    text: `Hi ${userName}, your payment of ${amountFormatted} for ${courseName} is confirmed. Your enrollment is active. Invoice attached.`,
+    attachments,
   });
 };
 
