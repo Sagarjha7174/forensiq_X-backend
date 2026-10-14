@@ -1,15 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const verifyToken = require("../middlewares/auth");
-
+const { requireStaff } = require("../middlewares/checkAdmin");
 const { imageupload } = require('../controllers/fileUpload/fileUpload');
 const { uploadGenericFile } = require('../controllers/fileUpload/uploadController');
-const checkAdmin = require("../middlewares/checkAdmin");
+const { limiters } = require("../utils/rateLimiters");
 
-// Legacy route (keep for now until fully migrated)
-router.post("/fileupload", verifyToken, checkAdmin, imageupload);
+router.post("/fileupload", verifyToken, requireStaff, limiters.upload, imageupload);
 
-// New generic platform-wide upload route (any logged in user can upload, specific permissions checked in frontend or via specific limits)
-router.post("/upload", verifyToken, uploadGenericFile);
+// Generic upload endpoint (images/documents for everyone, videos for staff)
+router.post("/upload", verifyToken, limiters.upload, uploadGenericFile);
 
 module.exports = router;

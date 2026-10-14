@@ -1,5 +1,11 @@
 const prisma = require("../../config/database/prismaClient");
 const { orderConfirmationEmail } = require("../../utils/mailService");
+const { serverError } = require("../../utils/httpErrors");
+const logger = require("../../utils/logger");
+
+// Admin-granted enrollments may not masquerade as purchases.
+const ADMIN_SOURCES = ["ADMIN", "MANUAL", "SCHOLARSHIP"];
+const SAFE_USER_SELECT = { id: true, name: true, email: true };
 
 const assignCourse = async (req, res) => {
   try {
@@ -7,6 +13,12 @@ const assignCourse = async (req, res) => {
 
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0 || !courseId) {
       return res.status(400).json({ error: "Missing required fields" });
+    }
+    if (userIds.length > 500 || !userIds.every((u) => typeof u === "string")) {
+      return res.status(400).json({ error: "Invalid userIds" });
+    }
+    if (!ADMIN_SOURCES.includes(source)) {
+      return res.status(400).json({ error: "Invalid enrollment source" });
     }
 
     // Check if course exists
@@ -60,7 +72,7 @@ const assignCourse = async (req, res) => {
           status: 'ACTIVE',
           activatedAt: new Date()
         },
-        include: { user: true, course: true }
+        include: { user: { select: SAFE_USER_SELECT }, course: { select: { id: true, name: true, description: true } } }
       });
 
       assigned.push(enrollment);
@@ -80,7 +92,7 @@ const assignCourse = async (req, res) => {
             }
           });
         } catch (err) {
-          console.error(`Failed to send manual assignment email to ${enrollment.user.email}:`, err);
+          logger.error("Failed to send manual assignment email", { requestId: req.id, userId: enrollment.userId, error: err });
         }
       }
     }
@@ -91,8 +103,7 @@ const assignCourse = async (req, res) => {
       skipped
     });
   } catch (err) {
-    console.error("Assign course error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    return serverError(res, err, "Internal server error", req);
   }
 };
 

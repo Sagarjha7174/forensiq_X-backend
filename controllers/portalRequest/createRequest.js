@@ -1,12 +1,24 @@
 const prisma = require("../../config/database/prismaClient");
+const { serverError } = require("../../utils/httpErrors");
+
+const MAX_FORM_BYTES = 50 * 1024;
 
 const createRequest = async (req, res) => {
   try {
     const userId = req.user.id;
     const { module_type, title, serviceId, ...formData } = req.body;
 
-    if (!module_type) {
+    if (typeof module_type !== "string" || !/^[A-Za-z0-9 _-]{1,50}$/.test(module_type)) {
       return res.status(400).json({ error: "module_type is required" });
+    }
+    if (title !== undefined && (typeof title !== "string" || title.length > 200)) {
+      return res.status(400).json({ error: "Invalid title" });
+    }
+    if (Buffer.byteLength(JSON.stringify(formData || {}), "utf8") > MAX_FORM_BYTES) {
+      return res.status(413).json({ error: "Request details are too large" });
+    }
+    if (serviceId !== undefined && serviceId !== null && typeof serviceId !== "string") {
+      return res.status(400).json({ error: "Invalid serviceId" });
     }
 
     let serviceSnapshot = {};
@@ -15,7 +27,7 @@ const createRequest = async (req, res) => {
         where: { id: serviceId },
         include: { category: true }
       });
-      if (service) {
+      if (service && service.isActive) {
         serviceSnapshot = {
           serviceId: service.id,
           serviceName: service.title,
@@ -41,8 +53,7 @@ const createRequest = async (req, res) => {
       data: newRequest,
     });
   } catch (error) {
-    console.error("Error creating portal request:", error);
-    res.status(500).json({ error: "Failed to create portal request" });
+    return serverError(res, error, "Failed to create portal request", req);
   }
 };
 

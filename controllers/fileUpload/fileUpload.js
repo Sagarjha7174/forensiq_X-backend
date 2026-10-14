@@ -1,27 +1,25 @@
 const cloudinary = require("cloudinary").v2;
-async function fileuploadtoCloudinary(file, folder, quality) {
-  const options = {
-    folder,
-  };
-  options.resource_type = "auto";
-  if (quality) {
-    options.quality = quality;
-  }
-  return await cloudinary.uploader.upload(file.tempFilePath, options);
-}
+const { validateUpload } = require("../../utils/fileValidation");
+const { serverError } = require("../../utils/httpErrors");
+
+/** Legacy admin image upload (field name "imagefile"). Images only. */
 exports.imageupload = async (req, res) => {
   try {
-   
-    const file = req.files.imagefile;
+    const file = req.files?.imagefile;
+    if (!file) {
+      return res.status(400).json({ message: "No image provided" });
+    }
+    validateUpload(file, ["image"]);
 
-    
-    
-    const response = await fileuploadtoCloudinary(file, "forensiq");
-   
-
-    res.status(201).json({ message: "Image uploaded successfully" ,data: response.secure_url});
+    const response = await cloudinary.uploader.upload(file.tempFilePath, {
+      folder: "forensiq",
+      resource_type: "image",
+      use_filename: false,
+      unique_filename: true,
+    });
+    return res.status(201).json({ message: "Image uploaded successfully", data: response.secure_url });
   } catch (err) {
-    console.log(err);
-    return res.status(400).json({ message: "Image upload failed" });
+    if (err.expose) return res.status(err.status).json({ message: err.message });
+    return serverError(res, err, "Image upload failed", req);
   }
 };

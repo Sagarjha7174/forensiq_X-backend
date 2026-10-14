@@ -1,48 +1,42 @@
 const prisma = require("../../config/database/prismaClient");
+const { findAccessibleRequest, notFound, isStaff } = require("../../utils/portalAccess");
+const { serverError } = require("../../utils/httpErrors");
+
+const MAX_MESSAGE_LENGTH = 5000;
 
 const addMessage = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { message, client_temp_id } = req.body;
-    const userId = req.user.id;
+    const { message, client_temp_id } = req.body || {};
 
-    if (!message) {
+    if (typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ error: "Message content is required" });
     }
-
-    const role = (req.user?.role || '').toLowerCase();
-    const isAdmin = role === 'admin' || role === 'superadmin' || role === 'super_admin' || Boolean(req.user?.is_sub_admin);
-
-    // Verify request exists
-    const request = await prisma.portalRequest.findUnique({ where: { id } });
-    if (!request) {
-      return res.status(404).json({ error: "Request not found" });
+    if (message.length > MAX_MESSAGE_LENGTH) {
+      return res.status(400).json({ error: `Message is too long (max ${MAX_MESSAGE_LENGTH} characters)` });
     }
 
-    if (!isAdmin && request.userId !== userId) {
-      return res.status(403).json({ error: "Access denied" });
-    }
+    const request = await findAccessibleRequest(req.user, req.params.id);
+    if (!request) return notFound(res);
 
     const newMessage = await prisma.portalMessage.create({
       data: {
-        requestId: id,
-        userId,
+        requestId: request.id,
+        userId: req.user.id,
         message,
-        isAdmin,
-        client_temp_id: client_temp_id || null
+        isAdmin: isStaff(req.user), // derived from DB role, never from the client
+        client_temp_id: typeof client_temp_id === "string" ? client_temp_id.slice(0, 64) : null
       },
       include: {
         user: { select: { name: true, role: true } }
       }
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Message added successfully",
       data: newMessage,
     });
   } catch (error) {
-    console.error("Error adding message:", error);
-    res.status(500).json({ error: "Failed to add message" });
+    return serverError(res, error, "Failed to add message", req);
   }
 };
 

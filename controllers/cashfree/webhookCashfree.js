@@ -1,171 +1,124 @@
-const { PaymentStatus, EnrollmentStatus, EnrollmentSource } = require("@prisma/client");
-const crypto = require("crypto");
+const { PaymentStatus } = require("@prisma/client");
 const prisma = require("../../config/database/prismaClient");
-const { orderConfirmationEmail, paymentIssueEmail } = require("../../utils/mailService");
+const { orderConfirmationEmail } = require("../../utils/mailService");
 const Cashfree = require("../../utils/cashfree");
-const { CFEnvironment } = require("cashfree-pg");
+const { fulfillPayment, amountMatches } = require("../../services/paymentFulfillment");
+const logger = require("../../utils/logger");
 
+/**
+ * POST /api/webhooks/cashfree   (raw body — see routes/webhookRoutes.js)
+ *
+ * 1. Verify x-webhook-signature = base64(HMAC-SHA256(timestamp + rawBody, secret)) over the
+ *    EXACT bytes received (cashfree-pg PGVerifyWebhookSignature).
+ * 2. Only then parse JSON.
+ * 3. Validate order id, amount, currency and payment status against our payment record.
+ * 4. Fulfil idempotently (services/paymentFulfillment).
+ *
+ * Responses: 2xx = processed/ignored (Cashfree stops retrying); 4xx = invalid request;
+ * 5xx = transient failure (Cashfree retries).
+ */
 exports.cashfreeWebhook = async (req, res) => {
+  const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : null;
+  const signature = req.get("x-webhook-signature");
+  const timestamp = req.get("x-webhook-timestamp");
+
+  if (!rawBody || !signature || !timestamp) {
+    return res.status(400).json({ error: "Invalid webhook request" });
+  }
+
   try {
-    const rawBody = req.rawBody || JSON.stringify(req.body);
-    const signature = req.headers["x-webhook-signature"];
-    const timestamp = req.headers["x-webhook-timestamp"];
+    Cashfree.PGVerifyWebhookSignature(signature, rawBody, timestamp);
+  } catch {
+    logger.warn("Cashfree webhook signature verification failed", { requestId: req.id });
+    return res.status(401).json({ error: "Invalid webhook signature" });
+  }
 
-    try {
-        Cashfree.PGVerifyWebhookSignature(signature, rawBody, timestamp);
-    } catch (err) {
-        return res.status(400).json({ error: "Invalid webhook signature" });
-    }
+  let event;
+  try {
+    event = JSON.parse(rawBody);
+  } catch {
+    return res.status(400).json({ error: "Malformed webhook payload" });
+  }
 
-    const event = req.body;
+  const type = event?.type;
+  const order = event?.data?.order;
+  const p = event?.data?.payment;
+  const orderId = order?.order_id;
 
-    /* =========================
-       ✅ PAYMENT SUCCESS
-    ========================= */
-    if (event.type === "PAYMENT_SUCCESS_WEBHOOK") {
-      const p = event.data.payment;
-      const orderId = event.data.order.order_id;
-      const paymentId = String(p.cf_payment_id);
+  if (typeof orderId !== "string" || !orderId) {
+    return res.status(400).json({ error: "Malformed webhook payload" });
+  }
 
-      // Fetch payment first for fallback email
-      const payment = await prisma.payment.findFirst({
-        where: { cashfreeOrderId: orderId },
-        include: { user: true, course: true }
+  try {
+    if (type === "PAYMENT_SUCCESS_WEBHOOK") {
+      if (p?.payment_status !== "SUCCESS") {
+        return res.json({ status: "ignored - not a successful payment" });
+      }
+
+      const payment = await prisma.payment.findFirst({ where: { cashfreeOrderId: orderId } });
+      if (!payment) {
+        logger.warn("Webhook for unknown order", { orderId });
+        return res.json({ status: "ignored - no payment record" });
+      }
+      if (payment.status === PaymentStatus.SUCCESS) {
+        return res.json({ status: "ignored - already success" });
+      }
+
+      const currency = order.order_currency || p.payment_currency;
+      const paidAmount = p.payment_amount ?? order.order_amount;
+      if (!amountMatches(paidAmount, payment.amount) || (currency && currency !== "INR")) {
+        logger.error("Webhook amount/currency mismatch; payment NOT fulfilled", {
+          orderId,
+          paymentId: payment.id,
+          expected: payment.amount,
+          received: paidAmount,
+          currency,
+        });
+        return res.json({ status: "rejected - amount mismatch" });
+      }
+
+      const result = await fulfillPayment({
+        paymentId: payment.id,
+        cashfreePaymentId: p.cf_payment_id,
+        via: "webhook",
       });
 
-      if (!payment) return res.json({ status: "ignored - no payment record" });
-
-      // Idempotency
-      if (payment.status === PaymentStatus.SUCCESS) return res.json({ status: "ignored - already success" });
-
-      // Security: amount check
-      if (payment.amount !== p.payment_amount) {
-        throw new Error("Amount mismatch");
-      }
-
-      let completedPaymentDetails = null;
-      let transactionError = null;
-
-      try {
-        completedPaymentDetails = await prisma.$transaction(async (tx) => {
-        const currentPayment = await tx.payment.findUnique({ where: { id: payment.id } });
-        if (currentPayment.status === PaymentStatus.SUCCESS) return null;
-
-        // Optimistic Concurrency Control: atomically update only if still CREATED
-        const updateResult = await tx.payment.updateMany({
-          where: { id: payment.id, status: PaymentStatus.CREATED },
-          data: {
-            cashfreePaymentId: paymentId,
-            status: PaymentStatus.SUCCESS
-          }
+      if (!result.alreadyProcessed) {
+        const full = await prisma.payment.findUnique({
+          where: { id: payment.id },
+          include: { user: { select: { email: true, name: true } }, course: { select: { name: true } } },
         });
-
-        if (updateResult.count === 0) {
-          // Another process (e.g., frontend) already updated this payment
-          return null;
-        }
-
-          // Create Enrollment
-          await tx.enrollment.create({
-            data: {
-              userId: payment.userId,
-              courseId: payment.courseId,
-              paymentId: payment.id,
-              source: EnrollmentSource.PURCHASE,
-              status: EnrollmentStatus.ACTIVE
-            }
-          });
-
-          // Handle Coupon Usage
-          if (payment.couponId) {
-            await tx.coupon.update({
-              where: { id: payment.couponId },
-              data: { usedCount: { increment: 1 } }
-            });
-            
-            await tx.couponUse.create({
-              data: {
-                couponId: payment.couponId,
-                userId: payment.userId,
-                paymentId: payment.id
-              }
-            });
-          }
-          
-          return payment;
-        });
-      } catch (txErr) {
-        console.error("Enrollment transaction failed in webhookCashfree:", txErr);
-        transactionError = txErr;
-      }
-
-      // Send Order Confirmation Email
-      if (completedPaymentDetails && completedPaymentDetails.user && completedPaymentDetails.user.email) {
-        try {
+        if (full?.user?.email) {
           orderConfirmationEmail({
-            to: completedPaymentDetails.user.email,
-            fullName: completedPaymentDetails.user.name,
+            to: full.user.email,
+            fullName: full.user.name,
             details: {
-              courseName: completedPaymentDetails.course.name,
-              amount: completedPaymentDetails.amount,
-              originalAmount: completedPaymentDetails.originalAmount || completedPaymentDetails.amount,
-              discountAmount: completedPaymentDetails.discountAmount || 0,
-              paymentId: paymentId,
-              orderId: orderId
-            }
-          }).catch(err => console.error("Failed to send webhook order email:", err));
-        } catch (err) {
-          console.error("Error setting up webhook order email:", err);
+              courseName: full.course.name,
+              amount: full.amount,
+              originalAmount: full.originalAmount || full.amount,
+              discountAmount: full.discountAmount || 0,
+              paymentId: String(p.cf_payment_id),
+              orderId,
+            },
+          }).catch((err) => logger.error("Failed to send webhook order email", { orderId, error: err }));
         }
-      } else if (transactionError) {
-        // Concurrency check: Did the frontend process this exactly at the same time?
-        const checkPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
-        if (checkPayment && checkPayment.status === PaymentStatus.SUCCESS) {
-          console.log("Transaction failed but payment is already SUCCESS (handled by frontend).");
-          return res.json({ status: "ok", message: "Handled by frontend concurrently" });
-        }
-
-        // Transaction failed but payment was captured
-        if (payment.user && payment.user.email) {
-          try {
-            paymentIssueEmail({
-              to: payment.user.email,
-              fullName: payment.user.name,
-              details: {
-                courseName: payment.course.name,
-                amount: payment.amount,
-                paymentId: paymentId,
-                orderId: orderId
-              }
-            }).catch(err => console.error("Failed to send webhook payment issue email:", err));
-          } catch (err) {
-            console.error("Error setting up webhook payment issue email:", err);
-          }
-        }
-        console.error("Webhook processing failed due to transaction error:", transactionError);
-        return res.status(500).json({ error: "Enrollment transaction failed" });
       }
+
+      return res.json({ status: "ok" });
     }
 
-    /* =========================
-       ❌ PAYMENT FAILED
-    ========================= */
-    if (event.type === "PAYMENT_FAILED_WEBHOOK") {
-      const p = event.data.payment;
-      const orderId = event.data.order.order_id;
-
+    if (type === "PAYMENT_FAILED_WEBHOOK") {
       await prisma.payment.updateMany({
-        where: {
-          cashfreeOrderId: orderId,
-          status: { not: PaymentStatus.SUCCESS } // 🔒 do not downgrade
-        },
-        data: { status: PaymentStatus.FAILED }
+        where: { cashfreeOrderId: orderId, status: PaymentStatus.CREATED }, // never downgrade SUCCESS
+        data: { status: PaymentStatus.FAILED },
       });
+      return res.json({ status: "ok" });
     }
 
-    res.json({ status: "ok" });
+    // PAYMENT_USER_DROPPED_WEBHOOK, refunds, etc.: acknowledged, no state change.
+    return res.json({ status: "ignored" });
   } catch (err) {
-    console.error("Webhook error:", err);
-    res.status(500).json({ error: "Webhook processing failed" });
+    logger.error("Webhook processing failed (will be retried by Cashfree)", { orderId, type, error: err });
+    return res.status(500).json({ error: "Webhook processing failed" });
   }
 };

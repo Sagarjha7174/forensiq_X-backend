@@ -43,11 +43,35 @@ exports.getCouponById = async (req, res) => {
   }
 };
 
+
+const DISCOUNT_TYPES = ["PERCENTAGE", "FIXED_AMOUNT", "FREE_COURSE", "FLAT_PRICE"];
+
+/** Returns an error message for invalid coupon numbers/enums, or null. */
+const couponInputError = (body, { requireCode }) => {
+  const { code, discountType, discountValue, maxDiscountAmount, minimumPurchaseAmount, usageLimit, perUserLimit, applicableTo, courseIds } = body || {};
+  if (requireCode && (typeof code !== "string" || !/^[A-Za-z0-9_-]{3,32}$/.test(code))) {
+    return "Coupon code must be 3-32 letters, numbers, '-' or '_'";
+  }
+  if (discountType !== undefined && !DISCOUNT_TYPES.includes(discountType)) return "Invalid discount type";
+  if (applicableTo !== undefined && !["ALL_COURSES", "SELECTED_COURSES"].includes(applicableTo)) return "Invalid applicableTo";
+  const nonNeg = (v) => v === undefined || v === null || v === "" || (Number.isInteger(Number(v)) && Number(v) >= 0);
+  if (![discountValue, maxDiscountAmount, minimumPurchaseAmount, usageLimit, perUserLimit].every(nonNeg)) {
+    return "Discount values and limits must be whole, non-negative numbers";
+  }
+  if (discountType === "PERCENTAGE" && Number(discountValue) > 100) return "Percentage discount cannot exceed 100";
+  if (perUserLimit !== undefined && perUserLimit !== null && perUserLimit !== "" && Number(perUserLimit) < 1) return "perUserLimit must be at least 1";
+  if (courseIds !== undefined && (!Array.isArray(courseIds) || !courseIds.every((c) => typeof c === "string"))) return "Invalid courseIds";
+  return null;
+};
+
 // Create coupon
 exports.createCoupon = async (req, res) => {
   try {
     const { code, title, description, discountType, discountValue, maxDiscountAmount, minimumPurchaseAmount, applicableTo, validFrom, validUntil, usageLimit, perUserLimit, courseIds } = req.body;
     
+    const inputError = couponInputError(req.body, { requireCode: true });
+    if (inputError) return res.status(400).json({ error: inputError });
+
     // Check if code exists
     const existing = await prisma.coupon.findUnique({ where: { code: code.toUpperCase() } });
     if (existing) return res.status(400).json({ error: "Coupon code already exists" });
@@ -87,6 +111,9 @@ exports.updateCoupon = async (req, res) => {
   try {
     const { id } = req.params;
     const { title, description, discountType, discountValue, maxDiscountAmount, minimumPurchaseAmount, applicableTo, validFrom, validUntil, usageLimit, perUserLimit, courseIds } = req.body;
+
+    const inputError = couponInputError(req.body, { requireCode: false });
+    if (inputError) return res.status(400).json({ error: inputError });
 
     const updateData = {
       title,

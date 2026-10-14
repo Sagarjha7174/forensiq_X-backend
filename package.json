@@ -10,31 +10,37 @@
     "db:push": "npx prisma db push --schema=config/database/schema.prisma",
     "db:migrate": "npx prisma migrate dev --schema=config/database/schema.prisma",
     "db:generate": "npx prisma generate --schema=config/database/schema.prisma",
-    "postinstall": "npx prisma generate --schema=config/database/schema.prisma"
+    "postinstall": "npx prisma generate --schema=config/database/schema.prisma",
+    "test": "node --test --test-concurrency=1 \"tests/*.test.js\"",
+    "db:validate": "prisma validate --schema=config/database/schema.prisma"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@azure/communication-email": "^1.1.0",
     "@prisma/client": "^5.22.0",
+    "axios": "^1.20.0",
     "bcrypt": "^6.0.0",
-    "body-parser": "^2.2.2",
     "cashfree-pg": "^6.0.6",
     "cloudinary": "^2.5.1",
     "cors": "^2.8.5",
-    "crypto": "^1.0.1",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "express-fileupload": "^1.5.1",
-    "forensiq-backend": "file:",
+    "express-rate-limit": "^8.7.1",
     "google-auth-library": "^10.9.0",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
-    "nodemailer": "^9.0.3",
-    "nodemon": "^3.1.14",
-    "pdfkit": "^0.20.2",
+    "nodemailer": "^10.1.1",
     "prisma": "^5.22.0",
     "puppeteer": "^25.12.0",
-    "xlsx": "^0.18.5"
+    "sanitize-html": "^2.18.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

@@ -1,5 +1,7 @@
 const prisma = require('../../config/database/prismaClient');
 const { queueIfSubAdmin } = require('../../utils/staffWriteGate');
+const { serverError } = require('../../utils/httpErrors');
+const { normalizeRole } = require('../../utils/roles');
 
 exports.getEvents = async (req, res) => {
   try {
@@ -8,7 +10,7 @@ exports.getEvents = async (req, res) => {
     });
     return res.json(rows);
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to fetch events', error: error.message });
+    return serverError(res, error, 'Failed to fetch events', req);
   }
 };
 
@@ -39,7 +41,7 @@ exports.createEvent = async (req, res) => {
     });
     return res.status(201).json(row);
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to create event', error: error.message });
+    return serverError(res, error, 'Failed to create event', req);
   }
 };
 
@@ -80,7 +82,7 @@ exports.updateEvent = async (req, res) => {
 
     return res.json(updatedRow);
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to update event', error: error.message });
+    return serverError(res, error, 'Failed to update event', req);
   }
 };
 
@@ -102,7 +104,7 @@ exports.deleteEvent = async (req, res) => {
     await prisma.networkEvent.delete({ where: { id } });
     return res.json({ message: 'Event deleted successfully' });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to delete event', error: error.message });
+    return serverError(res, error, 'Failed to delete event', req);
   }
 };
 
@@ -112,7 +114,7 @@ exports.registerEvent = async (req, res) => {
     const event = await prisma.networkEvent.findUnique({ where: { id } });
     if (!event) return res.status(404).json({ message: 'Event not found' });
 
-    if (req.user?.role !== 'member') {
+    if (normalizeRole(req.user?.role) !== 'MEMBER') {
       return res.status(403).json({ message: 'Only members can register for events' });
     }
 
@@ -135,7 +137,7 @@ exports.registerEvent = async (req, res) => {
 
     return res.status(201).json({ message: 'Successfully registered for event' });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to register', error: error.message });
+    return serverError(res, error, 'Failed to register', req);
   }
 };
 
@@ -148,7 +150,7 @@ exports.getMyRegistrations = async (req, res) => {
     });
     return res.json(rows.map(r => r.event));
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to fetch registrations', error: error.message });
+    return serverError(res, error, 'Failed to fetch registrations', req);
   }
 };
 
@@ -162,6 +164,6 @@ exports.getEventRegistrations = async (req, res) => {
     });
     return res.json(rows);
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to fetch event registrations', error: error.message });
+    return serverError(res, error, 'Failed to fetch event registrations', req);
   }
 };

@@ -22,6 +22,9 @@ const verifyPassword = async (req, res) => {
       return res.status(404).json({ error: "Admin user not found" });
     }
 
+    if (!user.password || typeof password !== "string") {
+      return res.status(401).json({ error: "Incorrect password" });
+    }
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {

@@ -1,7 +1,11 @@
+const { safeUrl } = require("../../utils/sanitize");
+const { handleControllerError } = require("../../utils/httpErrors");
 const prisma = require("../../config/database/prismaClient");
 
 const createBlog = async (req, res) => {
-    const { title, content, author, imageUrl } = req.body;
+    const { title, content, author } = req.body;
+    let imageUrl;
+    try { imageUrl = safeUrl(req.body.imageUrl, "imageUrl") || null; } catch (e) { return res.status(400).json({ error: e.message }); }
 
     // Basic validation (optional but recommended)
     if (!title || !content || !author) {
@@ -22,7 +26,7 @@ const createBlog = async (req, res) => {
 
         res.status(201).json(blog);
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        return handleControllerError(res, err, req);
     }
 };
 

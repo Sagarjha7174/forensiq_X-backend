@@ -1,4 +1,10 @@
 const nodemailer = require('nodemailer');
+
+// Logs show only a masked recipient (e.g. "sa***@gmail.com").
+const maskEmail = (email) => {
+  const [user = '', domain = ''] = String(email || '').split('@');
+  return `${user.slice(0, 2)}***@${domain}`;
+};
 require('dotenv').config();
 
 // Create Nodemailer transporter
@@ -84,10 +90,10 @@ const sendMail = async ({ to, subject, html, text, attachments }) => {
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`[MAIL] SUCCESS: Email sent to ${to}. MessageID: ${info.messageId}`);
+    console.log(`[MAIL] SUCCESS: Email sent to ${maskEmail(to)}. MessageID: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error(`[MAIL] ERROR sending to ${to}:`, error.message);
+    console.error(`[MAIL] ERROR sending to ${maskEmail(to)}:`, error.message);
     throw new Error('Failed to send email.');
   }
 };

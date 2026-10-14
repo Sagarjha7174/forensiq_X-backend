@@ -1,48 +1,39 @@
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const prisma = require('../../config/database/prismaClient');
-require('dotenv').config();
+const { signAuthToken } = require('../../utils/authToken');
+const { validatePassword } = require('../../utils/passwordPolicy');
+const { serverError } = require('../../utils/httpErrors');
 
 /**
- * POST /api/v1/auth/complete-profile
- * Called after Google signup to collect phone (required) and optionally set a password.
- * Sets profileCompleted = true and returns a fresh JWT.
+ * POST /api/v1/auth/complete-profile   (requires verifyToken)
+ * Called after Google signup to collect phone (required) and optionally set an
+ * INITIAL password. It can never replace an existing password: that requires the
+ * current password (PUT /user/change-password) or the OTP reset flow.
+ * Returns a fresh JWT only after the update is committed.
  */
 exports.completeProfile = async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({ message: 'Missing authorization token' });
-    }
+    const userId = req.user.id;
+    const { phone, password, classes, degree } = req.body || {};
 
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch {
-      return res.status(401).json({ message: 'Invalid or expired token' });
-    }
-
-    const userId = decoded.id;
-    const { phone, password, classes, degree } = req.body;
-
-    // Phone is required
-    if (!phone || !phone.trim()) {
+    if (typeof phone !== 'string' || !phone.trim()) {
       return res.status(400).json({ message: 'Phone number is required' });
     }
-
-    // Validate phone format (10 digits)
     if (!/^\d{10}$/.test(phone.trim())) {
       return res.status(400).json({ message: 'Phone number must be exactly 10 digits' });
     }
 
-    // If password is provided, validate it
-    if (password !== undefined && password !== '') {
-      if (password.length < 6) {
-        return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    const wantsPassword = typeof password === 'string' && password !== '';
+    if (wantsPassword) {
+      if (req.user.password) {
+        return res.status(400).json({
+          message: 'A password is already set for this account. Use "Change password" instead.'
+        });
       }
+      const passwordError = validatePassword(password);
+      if (passwordError) return res.status(400).json({ message: passwordError });
     }
 
-    // Check if phone is already taken by another user
     const existingPhone = await prisma.user.findFirst({
       where: { phone: phone.trim(), NOT: { id: userId } }
     });
@@ -54,52 +45,41 @@ exports.completeProfile = async (req, res) => {
       phone: phone.trim(),
       profileCompleted: true
     };
-
-    if (classes) updateData.classes = classes;
-    if (degree) updateData.degree = degree;
-
-    if (password && password.trim() !== '') {
+    if (typeof classes === 'string' && classes.trim()) updateData.classes = classes.trim().slice(0, 120);
+    if (typeof degree === 'string' && degree.trim()) updateData.degree = degree.trim().slice(0, 120);
+    if (wantsPassword) {
       updateData.password = await bcrypt.hash(password, 10);
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        role: true,
-        profile_image: true,
-        profileCompleted: true,
-        classes: true,
-        degree: true
-      }
-    });
+    // Only set the password if it is still empty at write time (guards against races).
+    const where = wantsPassword ? { id: userId, password: null } : { id: userId };
+    const result = await prisma.user.updateMany({ where, data: updateData });
+    if (result.count === 0) {
+      return res.status(409).json({ message: 'Profile could not be updated; please retry.' });
+    }
 
-    // Issue a fresh JWT with profileCompleted = true
-    const newToken = jwt.sign(
-      {
-        id: updatedUser.id,
-        role: updatedUser.role,
-        userName: updatedUser.name,
-        profileCompleted: true
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
+    const updatedUser = await prisma.user.findUnique({ where: { id: userId } });
+    const newToken = signAuthToken(updatedUser);
 
     return res.json({
       message: 'Profile completed successfully',
       token: newToken,
-      user: updatedUser
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        phone: updatedUser.phone,
+        role: updatedUser.role,
+        profile_image: updatedUser.profile_image,
+        profileCompleted: updatedUser.profileCompleted,
+        classes: updatedUser.classes,
+        degree: updatedUser.degree
+      }
     });
   } catch (error) {
-    console.error('[COMPLETE-PROFILE] Error:', error.message);
     if (error.code === 'P2002') {
       return res.status(400).json({ message: 'This phone number is already registered' });
     }
-    return res.status(500).json({ message: 'Failed to complete profile', error: error.message });
+    return serverError(res, error, 'Failed to complete profile', req);
   }
 };

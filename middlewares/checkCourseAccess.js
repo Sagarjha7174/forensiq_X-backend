@@ -1,58 +1,47 @@
 const prisma = require("../config/database/prismaClient");
+const { isStaff } = require("../utils/roles");
+const { serverError } = require("../utils/httpErrors");
 
 /**
- * Middleware to check if the current user has an ACTIVE enrollment for a course.
- * This can be used for endpoints where courseId is explicitly provided in params.
+ * Returns null when `user` may access paid content of `courseId`, otherwise
+ * `{ status, error }` describing why not. Staff always have access.
+ */
+async function getCourseAccessDenial(user, courseId) {
+  if (!user) return { status: 401, error: "Unauthorized" };
+  if (!courseId || typeof courseId !== "string") {
+    return { status: 400, error: "courseId is required for authorization" };
+  }
+  if (isStaff(user)) return null;
+
+  const enrollment = await prisma.enrollment.findUnique({
+    where: { userId_courseId: { userId: user.id, courseId } },
+    include: { course: { select: { status: true } } },
+  });
+
+  if (!enrollment) return { status: 403, error: "Forbidden: You are not enrolled in this course." };
+  if (enrollment.status !== "ACTIVE") {
+    return { status: 403, error: "Forbidden: Your enrollment is inactive, suspended, or removed." };
+  }
+  if (enrollment.course?.status !== "ACTIVE") {
+    return { status: 403, error: "Forbidden: This course is currently unavailable." };
+  }
+  return null;
+}
+
+/**
+ * Middleware: require an ACTIVE enrollment in an ACTIVE course.
+ * courseId is read from route params only, so callers cannot redirect the check
+ * to a different course via body/query.
  */
 async function checkCourseAccess(req, res, next) {
-  // Try to find courseId in params, body, or query
-  const courseId = req.params.courseId || req.body.courseId || req.query.courseId;
-
-  if (!courseId) {
-    // If there's no courseId to check, we can't authorize at the course level generically here.
-    // Use this middleware ONLY on routes that have a courseId.
-    return res.status(400).json({ error: "courseId is required for authorization" });
-  }
-
-  // Admin bypass
-  if (req.user && (req.user.role === "ADMIN" || req.user.role === "SUPERADMIN")) {
-    return next();
-  }
-
   try {
-    const userId = req.user.id;
-    
-    // Check enrollment and course status
-    const enrollment = await prisma.enrollment.findUnique({
-      where: {
-        userId_courseId: {
-          userId: userId,
-          courseId: courseId,
-        }
-      },
-      include: {
-        course: true
-      }
-    });
-
-    if (!enrollment) {
-      return res.status(403).json({ error: "Forbidden: You are not enrolled in this course." });
-    }
-
-    if (enrollment.status !== "ACTIVE") {
-      return res.status(403).json({ error: "Forbidden: Your enrollment is inactive, suspended, or removed." });
-    }
-
-    if (enrollment.course.status !== "ACTIVE") {
-      return res.status(403).json({ error: "Forbidden: This course is currently unavailable." });
-    }
-
-    // Access granted
-    next();
+    const denial = await getCourseAccessDenial(req.user, req.params.courseId);
+    if (denial) return res.status(denial.status).json({ error: denial.error });
+    return next();
   } catch (error) {
-    console.error("Authorization check error:", error);
-    res.status(500).json({ error: "Internal server error during authorization" });
+    return serverError(res, error, "Internal server error during authorization", req);
   }
 }
 
 module.exports = checkCourseAccess;
+module.exports.getCourseAccessDenial = getCourseAccessDenial;

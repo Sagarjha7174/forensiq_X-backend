@@ -1,5 +1,12 @@
 const prisma = require("../config/database/prismaClient");
 const axios = require('axios');
+const { serverError } = require("../utils/httpErrors");
+const { safeUrl } = require("../utils/sanitize");
+const { assertPublicHttpUrl } = require("../utils/publicUrl");
+const logger = require("../utils/logger");
+
+// Validate optional URL fields supplied by staff (rendered as links / media sources).
+const optionalUrl = (value, field) => (value === undefined ? undefined : safeUrl(value, field));
 
 const extractDriveId = (url) => {
   const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
@@ -23,7 +30,7 @@ exports.createModule = async (req, res) => {
     });
     res.status(201).json(module);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
@@ -37,7 +44,7 @@ exports.updateModule = async (req, res) => {
     });
     res.json(module);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
@@ -47,7 +54,7 @@ exports.deleteModule = async (req, res) => {
     await prisma.courseModule.delete({ where: { id } });
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
@@ -64,15 +71,16 @@ exports.reorderModules = async (req, res) => {
     );
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
 // LECTURES
 exports.createLecture = async (req, res) => {
   try {
-    const { moduleId, title, description, videoUrl, videoType, duration, isFree } = req.body;
-    
+    const { moduleId, title, description, videoType, duration, isFree } = req.body;
+    const videoUrl = optionalUrl(req.body.videoUrl, "videoUrl");
+
     const lastLecture = await prisma.courseLecture.findFirst({
       where: { moduleId },
       orderBy: { order: 'desc' }
@@ -84,21 +92,22 @@ exports.createLecture = async (req, res) => {
     });
     res.status(201).json(lecture);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
 exports.updateLecture = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, videoUrl, videoType, duration, isFree } = req.body;
+    const { title, description, videoType, duration, isFree } = req.body;
+    const videoUrl = optionalUrl(req.body.videoUrl, "videoUrl");
     const lecture = await prisma.courseLecture.update({
       where: { id },
       data: { title, description, videoUrl, videoType, duration: Number(duration || 0), isFree: Boolean(isFree) }
     });
     res.json(lecture);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
@@ -108,7 +117,7 @@ exports.deleteLecture = async (req, res) => {
     await prisma.courseLecture.delete({ where: { id } });
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
@@ -125,20 +134,22 @@ exports.reorderLectures = async (req, res) => {
     );
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
 // RESOURCES
 exports.createResource = async (req, res) => {
   try {
-    const { courseId, title, description, fileUrl, fileType } = req.body;
+    const { courseId, title, description, fileType } = req.body;
+    const fileUrl = optionalUrl(req.body.fileUrl, "fileUrl");
+    if (!fileUrl) return res.status(400).json({ error: "fileUrl is required" });
     const resource = await prisma.courseResource.create({
       data: { courseId, title, description, fileUrl, fileType }
     });
     res.status(201).json(resource);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
@@ -148,20 +159,21 @@ exports.deleteResource = async (req, res) => {
     await prisma.courseResource.delete({ where: { id } });
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
 // ASSIGNMENTS
 exports.createAssignment = async (req, res) => {
   try {
-    const { courseId, title, description, fileUrl, deadline, totalMarks } = req.body;
+    const { courseId, title, description, deadline, totalMarks } = req.body;
+    const fileUrl = optionalUrl(req.body.fileUrl, "fileUrl");
     const assignment = await prisma.courseAssignment.create({
       data: { courseId, title, description, fileUrl, deadline: deadline ? new Date(deadline) : null, totalMarks: Number(totalMarks || 100) }
     });
     res.status(201).json(assignment);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
@@ -171,20 +183,21 @@ exports.deleteAssignment = async (req, res) => {
     await prisma.courseAssignment.delete({ where: { id } });
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
 // ANNOUNCEMENTS
 exports.createAnnouncement = async (req, res) => {
   try {
+    // Rendered as plain text (React-escaped) in the UI; stored as-is.
     const { courseId, title, content } = req.body;
     const announcement = await prisma.courseAnnouncement.create({
       data: { courseId, title, content }
     });
     res.status(201).json(announcement);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
@@ -194,7 +207,7 @@ exports.deleteAnnouncement = async (req, res) => {
     await prisma.courseAnnouncement.delete({ where: { id } });
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
@@ -223,7 +236,7 @@ exports.getCourseContent = async (req, res) => {
     if (!course) return res.status(404).json({ error: "Course not found" });
     res.json(course);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, "Course content operation failed", req);
   }
 };
 
@@ -269,9 +282,12 @@ exports.streamResource = async (req, res) => {
 
     // Support HTTP Range Requests for chunked fast loading
     const headers = {};
-    if (req.headers.range) {
+    if (typeof req.headers.range === "string" && /^bytes=\d*-\d*(,\s*\d*-\d*){0,4}$/.test(req.headers.range)) {
       headers.Range = req.headers.range;
     }
+
+    // SSRF guard: only public http(s) hosts (re-checked on every redirect hop below).
+    await assertPublicHttpUrl(streamUrl);
 
     const response = await axios({
       method: 'get',
@@ -279,6 +295,13 @@ exports.streamResource = async (req, res) => {
       responseType: 'stream',
       headers,
       maxRedirects: 5,
+      timeout: 30000,
+      beforeRedirect: (options) => {
+        const target = `${options.protocol}//${options.hostname}`;
+        if (!/^https?:$/.test(options.protocol) || /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(options.hostname)) {
+          throw new Error(`Blocked redirect to ${target}`);
+        }
+      },
       validateStatus: (status) => status >= 200 && status < 300 // Allow 200 and 206
     });
 
@@ -298,34 +321,16 @@ exports.streamResource = async (req, res) => {
 
     response.data.pipe(res);
   } catch (error) {
-    console.error("=== STREAM RESOURCE FATAL ERROR ===");
-    console.error(error);
-    
-    let errorDetails = error.message;
-    if (error.response) {
-      console.error("6. Error response from external server:");
-      console.error(`Status: ${error.response.status}`);
-      console.error(`Headers:`, error.response.headers);
-      
-      // Attempt to read stream to log body
-      if (error.response.data && typeof error.response.data.read === 'function') {
-        const bodyBuffer = error.response.data.read();
-        if (bodyBuffer) {
-           console.error(`Body:`, bodyBuffer.toString());
-           errorDetails += ` | Body: ${bodyBuffer.toString()}`;
-        } else {
-           console.error("Body could not be read synchronously from stream.");
-        }
-      } else {
-        console.error(`Body:`, error.response.data);
-      }
-    }
-
-    res.status(500).json({ 
-      error: "Failed to stream resource securely.", 
-      message: errorDetails,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+    if (error.expose) return res.status(error.status).json({ error: error.message });
+    logger.error("Failed to stream course resource", {
+      requestId: req.id,
+      courseId: req.params.courseId,
+      resourceId: req.params.resourceId,
+      upstreamStatus: error.response?.status,
+      error,
     });
+    if (res.headersSent) return res.end();
+    return res.status(502).json({ error: "Failed to load the document. Please try again later." });
   }
 };
 

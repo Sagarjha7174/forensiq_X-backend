@@ -1,3 +1,5 @@
+const { safeUrl } = require("../../utils/sanitize");
+const { handleControllerError } = require("../../utils/httpErrors");
 const prisma = require("../../config/database/prismaClient");
 
 const updateNotice = async (req, res) => {
@@ -20,7 +22,9 @@ const updateNotice = async (req, res) => {
         }
 
         // 2. Extract fields from request body
-        const { title, description, fileUrl } = req.body;
+        const { title, description } = req.body;
+        let fileUrl;
+        try { fileUrl = safeUrl(req.body.fileUrl, "fileUrl"); } catch (e) { return res.status(400).json({ error: e.message }); }
 
         // 3. Update notice with fallback values
         const updatedNotice = await prisma.notice.update({
@@ -37,7 +41,7 @@ const updateNotice = async (req, res) => {
         res.status(200).json(updatedNotice);
 
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        return handleControllerError(res, err, req);
     }
 };
 

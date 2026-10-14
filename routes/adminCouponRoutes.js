@@ -1,22 +1,22 @@
 const express = require('express');
-const { 
-  getAllCoupons, 
-  getCouponById, 
-  createCoupon, 
-  updateCoupon, 
-  deleteCoupon, 
-  toggleCouponStatus 
+const {
+  getAllCoupons,
+  getCouponById,
+  createCoupon,
+  updateCoupon,
+  deleteCoupon,
+  toggleCouponStatus
 } = require('../controllers/coupon/adminCouponController');
-const checkAdmin = require('../middlewares/checkAdmin');
+const { requireStaff, requireFullAdmin } = require('../middlewares/checkAdmin');
 
 const router = express.Router();
 
-router.use(checkAdmin);
-router.get('/', getAllCoupons);
-router.get('/:id', getCouponById);
-router.post('/', createCoupon);
-router.put('/:id', updateCoupon);
-router.delete('/:id', deleteCoupon);
-router.patch('/:id/toggle-status', toggleCouponStatus);
+// Reads: any staff. Writes affect pricing / revenue: full administrators only.
+router.get('/', requireStaff, getAllCoupons);
+router.get('/:id', requireStaff, getCouponById);
+router.post('/', requireFullAdmin, createCoupon);
+router.put('/:id', requireFullAdmin, updateCoupon);
+router.delete('/:id', requireFullAdmin, deleteCoupon);
+router.patch('/:id/toggle-status', requireFullAdmin, toggleCouponStatus);
 
 module.exports = router;

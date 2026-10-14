@@ -1,8 +1,12 @@
+const { safeUrl } = require("../../utils/sanitize");
+const { handleControllerError } = require("../../utils/httpErrors");
 const prisma = require("../../config/database/prismaClient");
 
 const updateBlog = async (req, res) => {
     const { id } = req.params;
-    const { title, content, author, imageUrl } = req.body;
+    const { title, content, author } = req.body;
+    let imageUrl;
+    try { imageUrl = req.body.imageUrl === undefined ? undefined : (safeUrl(req.body.imageUrl, "imageUrl") || null); } catch (e) { return res.status(400).json({ error: e.message }); }
 
     try {
         // Check if blog exists
@@ -27,7 +31,7 @@ const updateBlog = async (req, res) => {
 
         res.status(200).json(updatedBlog);
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        return handleControllerError(res, err, req);
     }
 };
 

@@ -1,4 +1,6 @@
 const prisma = require("../../config/database/prismaClient");
+const { isStaff } = require("../../utils/roles");
+const { serverError } = require("../../utils/httpErrors");
 
 const getQuizAttempts = async (req, res) => {
   const { quizId } = req.params;
@@ -17,8 +19,7 @@ const getQuizAttempts = async (req, res) => {
 
     res.status(200).json(attempts);
   } catch (error) {
-    console.error("Error fetching quiz attempts:", error);
-    res.status(500).json({ error: "Internal server error" });
+    return serverError(res, error, "Internal server error", req);
   }
 };
 

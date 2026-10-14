@@ -1,3 +1,4 @@
+const { handleControllerError } = require("../utils/httpErrors");
 const prisma = require("../config/database/prismaClient");
 
 // Get active categories with active services (public)
@@ -15,7 +16,7 @@ exports.getPublicCatalog = async (req, res) => {
     });
     res.status(200).json({ success: true, data: categories });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return handleControllerError(res, error, req);
   }
 };
 
@@ -27,7 +28,7 @@ exports.getAllCategories = async (req, res) => {
     });
     res.status(200).json({ success: true, data: categories });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return handleControllerError(res, error, req);
   }
 };
 
@@ -39,7 +40,7 @@ exports.createCategory = async (req, res) => {
     });
     res.status(201).json({ success: true, data: category });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return handleControllerError(res, error, req);
   }
 };
 
@@ -53,7 +54,7 @@ exports.updateCategory = async (req, res) => {
     });
     res.status(200).json({ success: true, data: category });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return handleControllerError(res, error, req);
   }
 };
 
@@ -64,7 +65,7 @@ exports.deleteCategory = async (req, res) => {
     await prisma.serviceCategory.delete({ where: { id } });
     res.status(200).json({ success: true, message: "Category deleted" });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return handleControllerError(res, error, req);
   }
 };
 
@@ -77,7 +78,7 @@ exports.getAllServices = async (req, res) => {
     });
     res.status(200).json({ success: true, data: services });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return handleControllerError(res, error, req);
   }
 };
 
@@ -89,7 +90,7 @@ exports.createService = async (req, res) => {
     });
     res.status(201).json({ success: true, data: service });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return handleControllerError(res, error, req);
   }
 };
 
@@ -103,7 +104,7 @@ exports.updateService = async (req, res) => {
     });
     res.status(200).json({ success: true, data: service });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return handleControllerError(res, error, req);
   }
 };
 
@@ -114,6 +115,6 @@ exports.deleteService = async (req, res) => {
     await prisma.serviceCatalogItem.delete({ where: { id } });
     res.status(200).json({ success: true, message: "Service deleted" });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return handleControllerError(res, error, req);
   }
 };

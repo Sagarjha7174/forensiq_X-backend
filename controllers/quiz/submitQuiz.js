@@ -1,76 +1,89 @@
 const prisma = require("../../config/database/prismaClient");
+const { isStaff } = require("../../utils/roles");
+const { hasQuizAccess, verifyAttemptToken, sanitizeAnswers } = require("../../services/quizAccess");
+const { serverError } = require("../../utils/httpErrors");
 
+/**
+ * POST /quiz/submit  { quizId, answers: { [questionId]: "OPTION A".."OPTION D" }, attemptToken }
+ *
+ * - eligibility: active enrollment in an active course containing the quiz (staff exempt)
+ * - attemptToken (issued by GET /quiz/get/:quizId) enforces the time limit and makes each
+ *   started attempt submittable exactly once (duplicate / replayed submissions get 409)
+ * - score is always computed on the server
+ */
 const submitQuiz = async (req, res) => {
-  const { quizId, answers } = req.body;
+  const { quizId, answers, attemptToken } = req.body || {};
   const userId = req.user.id;
 
-  if (!quizId || !answers || typeof answers !== 'object') {
+  if (typeof quizId !== "string" || !quizId || !answers || typeof answers !== "object" || Array.isArray(answers)) {
     return res.status(400).json({ error: "Invalid payload. Requires quizId and answers object." });
   }
 
   try {
-    // 1. Fetch the quiz and true answers
+    const { quiz: meta, allowed } = await hasQuizAccess(req.user, quizId);
+    if (!meta) return res.status(404).json({ error: "Quiz not found" });
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden: You do not have an active enrollment for the course containing this quiz." });
+    }
+
+    const staff = isStaff(req.user);
+    const attempt = staff ? null : verifyAttemptToken(attemptToken, userId, quizId);
+    if (!staff && !attempt) {
+      return res.status(403).json({ error: "This quiz session has expired or is invalid. Please restart the quiz." });
+    }
+
     const quiz = await prisma.quiz.findUnique({
       where: { id: quizId },
-      include: {
-        questions: {
-          select: { id: true, answer: true }
-        }
-      }
+      include: { questions: { select: { id: true, answer: true } } }
+    });
+    if (!quiz) return res.status(404).json({ error: "Quiz not found" });
+
+    const cleanAnswers = sanitizeAnswers(answers, quiz.questions.map((q) => q.id));
+
+    let score = 0;
+    const questionAttemptsData = quiz.questions.map((question) => {
+      const userAnswer = cleanAnswers[question.id] || null;
+      const isCorrect = userAnswer !== null && userAnswer === question.answer;
+      if (isCorrect) score += 1;
+      return { questionId: question.id, answer: userAnswer || "", isCorrect };
     });
 
-    if (!quiz) {
-      return res.status(404).json({ error: "Quiz not found" });
-    }
+    const created = await prisma.$transaction(async (tx) => {
+      // Serialize submissions for this user+quiz so concurrent duplicates cannot both pass.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`quiz:${userId}:${quizId}`}))`;
 
-    // 2. Evaluate answers
-    let score = 0;
-    const questionAttemptsData = [];
-
-    for (const question of quiz.questions) {
-      const userAnswer = answers[question.id] || null;
-      const isCorrect = userAnswer === question.answer;
-
-      if (isCorrect) {
-        score += 1;
+      if (attempt) {
+        const already = await tx.attempt.findFirst({
+          where: { userId, quizId, createdAt: { gte: new Date(attempt.startedAt) } },
+          select: { id: true },
+        });
+        if (already) return null;
       }
 
-      questionAttemptsData.push({
-        questionId: question.id,
-        answer: userAnswer || "",
-        isCorrect: isCorrect
-      });
-    }
-
-    // 3. Save attempt and question attempts inside a transaction
-    const attempt = await prisma.$transaction(async (tx) => {
-      const newAttempt = await tx.attempt.create({
+      return tx.attempt.create({
         data: {
           userId,
           quizId,
           score,
-          questionAttempts: {
-            create: questionAttemptsData
-          }
+          questionAttempts: { create: questionAttemptsData }
         },
-        include: {
-          questionAttempts: true
-        }
       });
-      return newAttempt;
     });
 
-    res.status(200).json({
+    if (!created) {
+      return res.status(409).json({ error: "This attempt has already been submitted." });
+    }
+
+    const total = quiz.queCount || quiz.questions.length || 0;
+    return res.status(200).json({
       message: "Quiz submitted successfully",
-      attemptId: attempt.id,
-      score: attempt.score,
-      total: quiz.queCount,
-      percentage: (attempt.score / quiz.queCount) * 100
+      attemptId: created.id,
+      score: created.score,
+      total,
+      percentage: total ? (created.score / total) * 100 : 0
     });
-
   } catch (error) {
-    console.error("Error submitting quiz:", error);
-    res.status(500).json({ error: "Internal server error" });
+    return serverError(res, error, "Internal server error", req);
   }
 };
 

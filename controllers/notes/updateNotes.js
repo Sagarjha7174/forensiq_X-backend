@@ -1,8 +1,12 @@
+const { safeUrl } = require("../../utils/sanitize");
+const { handleControllerError } = require("../../utils/httpErrors");
 const prisma = require("../../config/database/prismaClient");
 
 const updateNotes = async (req, res) => {
     const { id } = req.params;
-    const { courseId, title, description, url } = req.body;
+    const { courseId, title, description } = req.body;
+    let url;
+    try { url = req.body.url === undefined ? undefined : safeUrl(req.body.url, "url"); } catch (e) { return res.status(400).json({ error: e.message }); }
 
     try {
         // Check if notes exists
@@ -27,7 +31,7 @@ const updateNotes = async (req, res) => {
 
         res.status(200).json(updatedNotes);
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        return handleControllerError(res, err, req);
     }
 };
 

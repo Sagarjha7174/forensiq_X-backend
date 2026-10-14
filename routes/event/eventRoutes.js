@@ -7,7 +7,7 @@ const checkAdmin = require("../../middlewares/checkAdmin");
 const statsController = require("../../controllers/event/eventStatsController");
 
 // Public routes
-router.get("/public", eventController.getEvents);
+router.get("/public", eventController.getPublicEvents);
 router.get("/public/featured", eventController.getFeaturedEvents);
 router.get("/public/stats", statsController.getStats);
 router.get("/public/:slug", eventController.getEventBySlug);
