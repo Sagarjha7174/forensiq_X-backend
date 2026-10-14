@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const STATS_FILE = path.join(__dirname, '../../../data/eventStats.json');
+const STATS_FILE = path.join(__dirname, '../../data/eventStats.json');
 
 // Ensure data directory and file exist
 const initStatsFile = () => {
@@ -31,7 +31,11 @@ exports.getStats = async (req, res) => {
 exports.updateStats = async (req, res) => {
   try {
     initStatsFile();
-    const { participants, communities } = req.body;
+    const { participants, communities } = req.body || {};
+    const valid = (v) => v === undefined || (typeof v === 'string' && v.length <= 20) || (Number.isFinite(v) && v >= 0);
+    if (!valid(participants) || !valid(communities)) {
+      return res.status(400).json({ error: 'participants and communities must be short values' });
+    }
     
     // Read current
     const currentData = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));

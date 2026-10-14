@@ -1,4 +1,5 @@
 const prisma = require("../../config/database/prismaClient");
+const { serverError } = require("../../utils/httpErrors");
 
 const removeEnrollment = async (req, res) => {
   try {
@@ -22,8 +23,7 @@ const removeEnrollment = async (req, res) => {
 
     res.status(200).json({ message: "Enrollment removed successfully" });
   } catch (err) {
-    console.error("Remove enrollment error:", err);
-    res.status(500).json({ error: err.message || "Internal server error", details: err.stack });
+    return serverError(res, err, "Internal server error", req);
   }
 };
 

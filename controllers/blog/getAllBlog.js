@@ -1,3 +1,4 @@
+const { handleControllerError } = require("../../utils/httpErrors");
 const prisma = require("../../config/database/prismaClient");
 
 const getAllBlogs = async (req, res) => {
@@ -10,7 +11,7 @@ const getAllBlogs = async (req, res) => {
 
         res.status(200).json(blogs);
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        return handleControllerError(res, err, req);
     }
 };
 

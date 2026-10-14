@@ -1,4 +1,6 @@
 const prisma = require("../../config/database/prismaClient");
+const { serverError } = require("../../utils/httpErrors");
+const { isStaff } = require("../../utils/roles");
 
 const getMyRequests = async (req, res) => {
   try {
@@ -6,7 +8,7 @@ const getMyRequests = async (req, res) => {
     const { module_type } = req.query;
 
     const whereClause = { userId };
-    if (module_type) {
+    if (typeof module_type === 'string' && module_type) {
       whereClause.moduleType = module_type;
     }
 
@@ -20,8 +22,7 @@ const getMyRequests = async (req, res) => {
       data: requests,
     });
   } catch (error) {
-    console.error("Error fetching my requests:", error);
-    res.status(500).json({ error: "Failed to fetch requests" });
+    return serverError(res, error, "Failed to fetch requests", req);
   }
 };
 

@@ -11,10 +11,11 @@ const {getAttemptResult} = require("../controllers/quiz/getAttemptResult");
 const {getCourseQuizzesOverview} = require("../controllers/quiz/getCourseQuizzesOverview");
 const checkAdmin = require("../middlewares/checkAdmin");
 const verifyToken = require("../middlewares/auth");
+const { limiters } = require("../utils/rateLimiters");
 
 router.post("/create", checkAdmin, createQuiz);
 router.get("/get/:quizId", verifyToken, getQuizById); // Protect this route since we need req.user for answer stripping
-router.post("/submit", verifyToken, submitQuiz);
+router.post("/submit", verifyToken, limiters.quizSubmit, submitQuiz);
 router.get("/history", verifyToken, getUserQuizHistory);
 router.get("/attempts/:quizId", verifyToken, getQuizAttempts);
 router.get("/attempt/:attemptId", verifyToken, getAttemptResult);

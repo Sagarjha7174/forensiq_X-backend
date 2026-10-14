@@ -1,46 +1,30 @@
-const jwt = require("jsonwebtoken");
-const prisma = require("../config/database/prismaClient");
-require("dotenv").config();
+const verifyToken = require("./auth");
+const { isStaff, isFullAdmin } = require("../utils/roles");
 
-async function checkPermission(req, res, next) {
-  const adminMail = process.env.ADMIN_EMAIL;
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) {
-    return res.status(403).json({ message: "Token not provided" });
-  }
+/** Run verifyToken first when a route forgot to (defence in depth), then `check`. */
+const withAuth = (check) => (req, res, next) => {
+  if (req.user) return check(req, res, next);
+  return verifyToken(req, res, (err) => (err ? next(err) : check(req, res, next)));
+};
 
-  try {
-    // Decode the token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+/**
+ * Staff access: ADMIN, SUPERADMIN and sub-admins.
+ * Used for admin reads and content management.
+ */
+const requireStaff = withAuth((req, res, next) => {
+  if (isStaff(req.user)) return next();
+  return res.status(403).json({ message: "Access denied: insufficient permissions", error: "Forbidden" });
+});
 
-    // Fetch the user along with their role and permissions
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-    });
+/**
+ * Full administrator only (ADMIN without is_sub_admin, or SUPERADMIN).
+ * Used for user/role management, enrollments, coupons, sub-admins and approvals.
+ */
+const requireFullAdmin = withAuth((req, res, next) => {
+  if (isFullAdmin(req.user)) return next();
+  return res.status(403).json({ message: "Access denied: administrator privileges required", error: "Forbidden" });
+});
 
-    if (!user) {
-      console.log("checkAdmin: User not found");
-      return res.status(404).json({ message: "User not found" });
-    }
-    
-    console.log("checkAdmin: User role is", user.role);
-    if (user.role === "SUPERADMIN" || user.role === "ADMIN" || user.role === "SUBADMIN") {
-      return next();
-    }
-
-    // Check if the user has the required permissions
-    else {
-      console.log("checkAdmin: Access denied for role", user.role);
-      return res
-        .status(403)
-        .json({ message: "Access denied: insufficient permissions" });
-    }
-  } catch (error) {
-    console.error("Error verifying token:", error);
-    return res
-      .status(401)
-      .json({ message: "Invalid token or authorization error" });
-  }
-}
-
-module.exports = checkPermission;
+module.exports = requireStaff;
+module.exports.requireStaff = requireStaff;
+module.exports.requireFullAdmin = requireFullAdmin;

@@ -1,17 +1,11 @@
-// Import the Prisma Client
-const { PrismaClient } = require("@prisma/client");
-
-// Create a new instance of PrismaClient
-const prisma = new PrismaClient();
+const prisma = require("../config/database/prismaClient");
+const logger = require("./logger");
 
 exports.checkConnection = async () => {
   try {
     await prisma.$connect();
-    console.log("Database connection successful!");
+    logger.info("Database connection successful");
   } catch (error) {
-    console.error("Error connecting to the database:", error);
-  } finally {
-    // Disconnect from the database to avoid keeping the connection open
-    await prisma.$disconnect();
+    logger.error("Error connecting to the database", { error });
   }
 };

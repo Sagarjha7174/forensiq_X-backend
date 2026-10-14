@@ -1,4 +1,5 @@
 const prisma = require("../../config/database/prismaClient");
+const { serverError } = require("../../utils/httpErrors");
 
 const VALID_OPTIONS = ["OPTION A", "OPTION B", "OPTION C", "OPTION D"];
 
@@ -7,6 +8,13 @@ const createQuiz = async (req, res) => {
 
   if (!Array.isArray(questions) || questions.length === 0) {
     return res.status(400).json({ error: "Questions are required" });
+  }
+  if (questions.length > 500) {
+    return res.status(400).json({ error: "Too many questions (max 500)" });
+  }
+  const isNonNegInt = (v) => Number.isInteger(Number(v)) && Number(v) >= 0;
+  if (![passMark, total, duration].every(isNonNegInt) || Number(duration) < 1 || Number(duration) > 600) {
+    return res.status(400).json({ error: "passMark, total and duration (1-600 minutes) must be whole numbers" });
   }
 
   // 🔒 Validate questions
@@ -43,9 +51,9 @@ const createQuiz = async (req, res) => {
           data: {
             name,
             queCount: questions.length,
-            passMark,
-            total,
-            duration,
+            passMark: Number(passMark),
+            total: Number(total),
+            duration: Number(duration),
           },
         });
 
@@ -75,8 +83,7 @@ const createQuiz = async (req, res) => {
       quizId: quiz.id,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error creating quiz" });
+    return serverError(res, error, "Error creating quiz", req);
   }
 };
 

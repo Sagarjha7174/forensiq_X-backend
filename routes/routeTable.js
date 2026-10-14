@@ -16,9 +16,10 @@ const couponRoutes = require("./couponRoutes");
 const blogRoutes = require("./blogRoutes");
 const {getAllBlogs} = require("../controllers/blog/getAllBlog");
 const portalRequestRoutes = require("./portalRequestRoutes");
+const { limiters } = require("../utils/rateLimiters");
 
 
-routeTable.post("/register", createUser);
+routeTable.post("/register", limiters.register, createUser);
 routeTable.get("/getSimpleCourses", getAllCoursesSimple);
 routeTable.use(loginRoute);
 routeTable.use("/auth", require("./authRoutes"));

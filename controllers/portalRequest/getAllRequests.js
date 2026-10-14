@@ -1,22 +1,23 @@
 const prisma = require("../../config/database/prismaClient");
+const { serverError } = require("../../utils/httpErrors");
+const { isStaff } = require("../../utils/roles");
 
 const getAllRequests = async (req, res) => {
   try {
     const { module_type, status } = req.query;
 
     // Check admin role
-    const role = (req.user?.role || '').toLowerCase();
-    const isAdmin = role === 'admin' || role === 'superadmin' || role === 'super_admin' || Boolean(req.user?.is_sub_admin);
+    const isAdmin = isStaff(req.user);
     
     if (!isAdmin) {
       return res.status(403).json({ error: "Access denied" });
     }
 
     const whereClause = {};
-    if (module_type) {
+    if (typeof module_type === 'string' && module_type) {
       whereClause.moduleType = module_type;
     }
-    if (status) {
+    if (typeof status === 'string' && status) {
       whereClause.status = status;
     }
 
@@ -33,8 +34,7 @@ const getAllRequests = async (req, res) => {
       data: requests,
     });
   } catch (error) {
-    console.error("Error fetching all requests:", error);
-    res.status(500).json({ error: "Failed to fetch requests" });
+    return serverError(res, error, "Failed to fetch requests", req);
   }
 };
 

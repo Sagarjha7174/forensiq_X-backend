@@ -128,3 +128,22 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# ---- Security: never commit secrets / keys ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa*
+*.keystore
+credentials*.json
+service-account*.json
+
+# Runtime data / uploads
+data/
+tmp/
+uploads/

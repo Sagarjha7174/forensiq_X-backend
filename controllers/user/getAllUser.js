@@ -1,5 +1,7 @@
 
 const prisma = require("../../config/database/prismaClient");
+const { toSafeUser } = require("../../utils/userSerializer");
+const { serverError } = require("../../utils/httpErrors");
 
 
 exports.getAllUser = async (req, res) => {
@@ -7,7 +9,7 @@ exports.getAllUser = async (req, res) => {
     const { role, accountStatus, isVerified, search, sort = 'newest', page = 1, limit = 10000 } = req.query;
 
     // Allow limit=all as a shorthand for no limit
-    const effectiveLimit = limit === 'all' ? 100000 : Number(limit);
+    const effectiveLimit = limit === 'all' ? 100000 : Math.min(Math.max(Number(limit) || 50, 1), 100000);
 
     const where = {};
     if (role) where.role = role;
@@ -46,7 +48,7 @@ exports.getAllUser = async (req, res) => {
     ]);
 
     const formattedUsers = users.map(user => ({
-      ...user,
+      ...toSafeUser(user),
       courses: user.enrollments.map(e => e.course),
       enrollments: undefined
     }));
@@ -61,7 +63,6 @@ exports.getAllUser = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Error fetching users:", error);
-    res.status(500).json({ error: "Internal server error" });
+    return serverError(res, error, "Internal server error", req);
   }
 };

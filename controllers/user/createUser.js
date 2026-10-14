@@ -1,66 +1,124 @@
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
+const { z } = require("zod");
 const prisma = require("../../config/database/prismaClient");
 const { sendSubAdminCredentialsEmail } = require("../../utils/mailService");
 const { getPrimaryFrontendUrl } = require("../../utils/frontendUrls");
+const { PUBLIC_ROLES, normalizeRole } = require("../../utils/roles");
+const { validatePassword } = require("../../utils/passwordPolicy");
+const { serverError } = require("../../utils/httpErrors");
+const logger = require("../../utils/logger");
 
+const optionalText = (max) =>
+  z.preprocess((v) => (v === "" || v === null ? undefined : v), z.string().trim().max(max).optional());
+
+const registrationSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  name: z.string().trim().min(1).max(120),
+  password: z.string(),
+  phone: optionalText(20),
+  course: optionalText(120),
+  classes: optionalText(120),
+  role: z.preprocess((v) => (v === undefined || v === null || v === "" ? "STUDENT" : normalizeRole(v)), z.string()),
+});
+
+/**
+ * Public self-registration. The role is NEVER trusted: only the public roles are
+ * accepted, anything else (ADMIN, SUPERADMIN, SUBADMIN, unknown) is rejected.
+ */
 const createUser = async (req, res) => {
-  const { email, name, password, phone, course, classes, role } = req.body;
+  const parsed = registrationSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid registration details", details: parsed.error.issues.map((i) => i.path.join(".")) });
+  }
+  const { email, name, password, phone, course, classes, role } = parsed.data;
+
+  if (!PUBLIC_ROLES.includes(role)) {
+    logger.warn("Rejected registration with non-public role", { requestId: req.id, role });
+    return res.status(400).json({ error: "Invalid role selected" });
+  }
+  const passwordError = validatePassword(password);
+  if (passwordError) return res.status(400).json({ error: passwordError });
+  if (phone && !/^\+?\d{7,15}$/.test(phone)) {
+    return res.status(400).json({ error: "Invalid phone number" });
+  }
+
   try {
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const newUser = await prisma.user.create({
       data: {
         email,
         name,
         password: hashedPassword,
-        phone,
+        phone: phone || null,
         degree: course,
         classes,
-        role: role ? role.toUpperCase() : "STUDENT",
+        role,
+        is_sub_admin: false,
       },
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       id: newUser.id,
       email: newUser.email,
       name: newUser.name,
       phone: newUser.phone,
       degree: newUser.degree,
       classes: newUser.classes,
+      role: newUser.role,
       createdAt: newUser.createdAt,
     });
   } catch (error) {
-    console.log(error);
     if (error.code === "P2002") {
       return res.status(400).json({ error: "Email or Phone already exists" });
     }
-    res
-      .status(500)
-      .json({ error: "An error occurred while creating the user." });
+    return serverError(res, error, "An error occurred while creating the user.", req);
   }
 };
 
+const subAdminSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  first_name: z.string().trim().min(1).max(60),
+  last_name: optionalText(60),
+  password: z.string().optional(),
+  phone: optionalText(20),
+});
+
+/**
+ * Create a sub-administrator. Route is restricted to full administrators
+ * (requireFullAdmin); sub-admins cannot create other administrators.
+ * The created account is always role ADMIN + is_sub_admin = true.
+ */
 const createSubAdmin = async (req, res) => {
-  const { email, first_name, last_name, password, phone } = req.body;
+  const parsed = subAdminSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ message: "Invalid sub-admin details" });
+  }
+  const { email, first_name, last_name, phone } = parsed.data;
+  // Generate a strong temporary password when none is supplied.
+  const password = parsed.data.password || `${crypto.randomBytes(9).toString("base64url")}9a`;
+  const passwordError = validatePassword(password);
+  if (passwordError) return res.status(400).json({ message: passwordError });
+
   try {
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const newUser = await prisma.user.create({
       data: {
         email,
-        name: `${first_name} ${last_name}`.trim(),
+        name: `${first_name} ${last_name || ""}`.trim(),
         password: hashedPassword,
-        phone: phone && phone.trim() ? phone.trim() : null, // null if not provided (phone is now optional)
+        phone: phone || null,
         degree: "Admin",
         classes: "Admin",
         role: "ADMIN",
         is_sub_admin: true,
-        profileCompleted: true // Sub-admins don't need profile completion
+        profileCompleted: true,
       },
     });
 
     const loginUrl = `${getPrimaryFrontendUrl()}/login`;
-
     let emailSent = false;
     try {
       await sendSubAdminCredentialsEmail({
@@ -71,27 +129,28 @@ const createSubAdmin = async (req, res) => {
       });
       emailSent = true;
     } catch (mailError) {
-      console.error('[MAIL] Failed to send sub-admin credentials:', mailError.message);
+      logger.error("Failed to send sub-admin credentials email", { requestId: req.id, error: mailError });
     }
 
-    res.status(201).json({
+    logger.info("Sub-admin created", { requestId: req.id, actorId: req.user?.id, subAdminId: newUser.id });
+
+    return res.status(201).json({
       id: newUser.id,
       email: newUser.email,
       name: newUser.name,
       role: newUser.role,
       is_sub_admin: newUser.is_sub_admin,
-      emailSent
+      emailSent,
     });
   } catch (error) {
-    console.log(error);
     if (error.code === "P2002") {
       return res.status(400).json({ message: "Email or Phone already exists" });
     }
-    res.status(500).json({ message: "An error occurred while creating sub-admin." });
+    return serverError(res, error, "An error occurred while creating sub-admin.", req);
   }
 };
 
-const listSubAdmins = async (_req, res) => {
+const listSubAdmins = async (req, res) => {
   try {
     const subAdmins = await prisma.user.findMany({
       where: {
@@ -113,11 +172,9 @@ const listSubAdmins = async (_req, res) => {
         updatedAt: true,
       },
     });
-
     return res.json(subAdmins);
   } catch (error) {
-    console.error('Error listing sub-admins:', error);
-    return res.status(500).json({ message: 'Failed to list sub-admins' });
+    return serverError(res, error, "Failed to list sub-admins", req);
   }
 };
 

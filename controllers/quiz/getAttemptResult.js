@@ -1,4 +1,6 @@
 const prisma = require("../../config/database/prismaClient");
+const { isStaff } = require("../../utils/roles");
+const { serverError } = require("../../utils/httpErrors");
 
 const getAttemptResult = async (req, res) => {
   const { attemptId } = req.params;
@@ -26,14 +28,13 @@ const getAttemptResult = async (req, res) => {
     }
 
     // Authorization check
-    if (attempt.userId !== userId && req.user.role !== "ADMIN" && req.user.role !== "SUPERADMIN") {
-      return res.status(403).json({ error: "Forbidden: You cannot view someone else's attempt." });
+    if (attempt.userId !== userId && !isStaff(req.user)) {
+      return res.status(404).json({ error: "Attempt not found" });
     }
 
     res.status(200).json(attempt);
   } catch (error) {
-    console.error("Error fetching attempt result:", error);
-    res.status(500).json({ error: "Internal server error" });
+    return serverError(res, error, "Internal server error", req);
   }
 };
 

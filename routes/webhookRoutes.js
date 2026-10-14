@@ -1,13 +1,15 @@
 const express = require("express");
-const bodyParser = require("body-parser");
 const router = express.Router();
-
 const { cashfreeWebhook } = require("../controllers/cashfree/webhookCashfree");
 
-// ❗ NO verifyToken here
+/* =========================
+   CASHFREE WEBHOOK
+   Raw body (Buffer) is required: the signature covers the exact bytes sent.
+   Accept any content-type so a charset suffix cannot bypass the raw parser.
+========================= */
 router.post(
   "/cashfree",
-  bodyParser.raw({ type: "application/json" }),
+  express.raw({ type: () => true, limit: "256kb" }),
   cashfreeWebhook
 );
 

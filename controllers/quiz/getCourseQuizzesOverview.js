@@ -1,4 +1,6 @@
 const prisma = require("../../config/database/prismaClient");
+const { isStaff } = require("../../utils/roles");
+const { serverError } = require("../../utils/httpErrors");
 
 const getCourseQuizzesOverview = async (req, res) => {
   const { courseId } = req.params;
@@ -16,7 +18,7 @@ const getCourseQuizzesOverview = async (req, res) => {
     });
 
     if (!enrollment || enrollment.status !== 'ACTIVE') {
-      if (req.user.role !== "ADMIN" && req.user.role !== "SUPERADMIN") {
+      if (!isStaff(req.user)) {
         return res.status(403).json({ error: "Forbidden: You are not enrolled in this course." });
       }
     }
@@ -76,8 +78,7 @@ const getCourseQuizzesOverview = async (req, res) => {
 
     res.status(200).json(overview);
   } catch (error) {
-    console.error("Error fetching course quizzes overview:", error);
-    res.status(500).json({ error: "Internal server error" });
+    return serverError(res, error, "Internal server error", req);
   }
 };
 

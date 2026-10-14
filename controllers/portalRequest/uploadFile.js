@@ -1,53 +1,52 @@
 const prisma = require("../../config/database/prismaClient");
 const cloudinary = require("cloudinary").v2;
-
-async function fileuploadtoCloudinary(file, folder, quality) {
-  const options = { folder };
-  options.resource_type = "auto";
-  if (quality) {
-    options.quality = quality;
-  }
-  return await cloudinary.uploader.upload(file.tempFilePath, options);
-}
+const { findAccessibleRequest, notFound, isStaff } = require("../../utils/portalAccess");
+const { validateUpload } = require("../../utils/fileValidation");
+const { serverError } = require("../../utils/httpErrors");
 
 const uploadFile = async (req, res) => {
   try {
-    const { id } = req.params;
     const file = req.files?.file; // the frontend usually sends it as 'file'
-
     if (!file) {
       return res.status(400).json({ error: "No file provided" });
     }
 
-    const request = await prisma.portalRequest.findUnique({ where: { id } });
-    if (!request) {
-      return res.status(404).json({ error: "Request not found" });
-    }
+    const request = await findAccessibleRequest(req.user, req.params.id);
+    if (!request) return notFound(res);
 
-    // Access control: User or Admin
-    const role = (req.user?.role || '').toLowerCase();
-    const isAdmin = role === 'admin' || role === 'superadmin' || role === 'super_admin' || Boolean(req.user?.is_sub_admin);
-    if (!isAdmin && request.userId !== req.user.id) {
-      return res.status(403).json({ error: "Access denied" });
-    }
+    // Content-based type check (images + documents only) and size limits.
+    const info = validateUpload(file, ["image", "document"]);
 
-    const response = await fileuploadtoCloudinary(file, "forensiq/portal_requests");
-    
+    const response = await cloudinary.uploader.upload(file.tempFilePath, {
+      folder: "forensiq/portal_requests",
+      resource_type: "auto", // content already validated: no HTML/SVG/scripts can reach Cloudinary
+      use_filename: false,
+      unique_filename: true,
+    });
+
     const newFile = await prisma.portalFile.create({
       data: {
-        requestId: id,
+        requestId: request.id,
         fileUrl: response.secure_url,
-        fileName: file.name
+        fileName: info.displayName
       }
     });
 
-    res.status(201).json({
+    await prisma.portalRequestActivity.create({
+      data: {
+        requestId: request.id,
+        action: "FILE_UPLOADED",
+        description: `Uploaded file: ${info.displayName}`,
+        performedBy: isStaff(req.user) ? "Admin" : (req.user?.name || "User")
+      }
+    });
+
+    return res.status(201).json({
       message: "File uploaded successfully",
       data: newFile,
     });
   } catch (error) {
-    console.error("Error uploading file:", error);
-    res.status(500).json({ error: "Failed to upload file" });
+    return serverError(res, error, "Failed to upload file", req);
   }
 };
 

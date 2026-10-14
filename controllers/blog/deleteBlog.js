@@ -1,3 +1,4 @@
+const { handleControllerError } = require("../../utils/httpErrors");
 const prisma = require("../../config/database/prismaClient");
 
 const deleteBlog = async (req, res) => {
@@ -18,7 +19,7 @@ const deleteBlog = async (req, res) => {
 
         res.status(200).json({ message: "Blog deleted successfully" });
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        return handleControllerError(res, err, req);
     }
 };
 

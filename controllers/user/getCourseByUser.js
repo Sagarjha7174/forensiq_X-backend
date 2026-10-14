@@ -1,8 +1,16 @@
 const prisma = require("../../config/database/prismaClient");
+const { canAccessOwnedResource } = require("../../utils/roles");
+const { serverError } = require("../../utils/httpErrors");
 
 
 const getCourseByUser = async (req, res) => {
   const { userId } = req.params;
+
+  // Owner or staff only: this response contains paid content links (notes URLs).
+  if (!canAccessOwnedResource(req.user, userId)) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
 
   try {
     const user = await prisma.user.findUnique({
@@ -47,8 +55,7 @@ const getCourseByUser = async (req, res) => {
       courses
     });
   } catch (err) {
-    console.error("Error fetching courses:", err);
-    res.status(500).json({ error: "Internal server error" });
+    return serverError(res, err, "Internal server error", req);
   }
 };
 

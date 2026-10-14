@@ -36,7 +36,7 @@ async function applyStaffAction(row) {
           date: new Date(b.date),
           mode: b.mode,
           location: b.location,
-          capacity: b.capacity,
+          capacity: b.capacity ? parseInt(b.capacity, 10) : null,
           image_url: b.image_url
         }
       });
@@ -57,7 +57,7 @@ async function applyStaffAction(row) {
           date: b.date ? new Date(b.date) : row.date,
           mode: b.mode ?? row.mode,
           location: b.location ?? row.location,
-          capacity: b.capacity ?? row.capacity,
+          capacity: b.capacity !== undefined ? (b.capacity ? parseInt(b.capacity, 10) : null) : row.capacity,
           image_url: b.image_url ?? row.image_url
         }
       });

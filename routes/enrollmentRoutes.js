@@ -1,20 +1,17 @@
 const express = require("express");
 const router = express.Router();
-const checkAdmin = require("../middlewares/checkAdmin");
-
+const { requireStaff, requireFullAdmin } = require("../middlewares/checkAdmin");
 const { assignCourse } = require("../controllers/enrollment/assignCourse");
 const { updateEnrollmentStatus } = require("../controllers/enrollment/updateEnrollmentStatus");
 const { removeEnrollment } = require("../controllers/enrollment/removeEnrollment");
 const { getAllEnrollments } = require("../controllers/enrollment/getAllEnrollments");
 const { bulkEnrollmentAction } = require("../controllers/enrollment/bulkActions");
 
-// All enrollment actions require admin privileges for now
-router.use(checkAdmin);
-
-router.get("/", getAllEnrollments);
-router.post("/", assignCourse);
-router.post("/bulk", bulkEnrollmentAction);
-router.patch("/:id", updateEnrollmentStatus);
-router.delete("/:id", removeEnrollment);
+// Enrollment grants paid access: staff may view, only full administrators may change.
+router.get("/", requireStaff, getAllEnrollments);
+router.post("/", requireFullAdmin, assignCourse);
+router.post("/bulk", requireFullAdmin, bulkEnrollmentAction);
+router.patch("/:id", requireFullAdmin, updateEnrollmentStatus);
+router.delete("/:id", requireFullAdmin, removeEnrollment);
 
 module.exports = router;

@@ -1,38 +1,36 @@
 const prisma = require("../../config/database/prismaClient");
+const { parseCourseInput } = require("./courseInput");
+const { serverError } = require("../../utils/httpErrors");
 
+const updateCourse = async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const course = await prisma.course.findUnique({ where: { id: courseId } });
+    if (!course) {
+      return res.status(404).json({ error: "Course not found" });
+    }
 
-const updateCourse=async(req,res)=>{
-    const courseId=req.params.id;
-    const course=await prisma.course.findUnique({
-        where:{
-            id:courseId
-        }
+    const input = parseCourseInput(req.body);
+
+    const updatedCourse = await prisma.course.update({
+      where: { id: courseId },
+      data: {
+        name: input.name || course.name,
+        description: input.description || course.description,
+        class: input.class || course.class,
+        teacher: input.teacher || course.teacher,
+        degree: input.degree || course.degree,
+        videoUrl: input.videoUrl || course.videoUrl,
+        imageUrl: input.imageUrl || course.imageUrl,
+        price: input.price !== undefined ? input.price : course.price,
+        status: input.status || course.status,
+      },
     });
-    if(!course){
-        return res.status(404).json({error:"Course not found"});
-    }
-    const { name, description, courseClass, teacher, degree, videoUrl, imageUrl, price, status } = req.body;
-    try {
-        var updatedCourse = await prisma.course.update({
-            where:{
-                id:courseId
-            },
-            data: {
-                name:name || course.name,
-                description:description || course.description,
-                class:courseClass || course.class,
-                teacher:teacher || course.teacher,
-                degree:degree || course.degree,
-                videoUrl:videoUrl || course.videoUrl,
-                imageUrl:imageUrl || course.imageUrl,
-                price:price !== undefined ? price : course.price,
-                status: status || course.status
-            },
-        });
-        res.status(201).json(updatedCourse);
-    } catch (err) {
-        res.status(400).json({ error: err.message });
-    }
-}
 
-module.exports={updateCourse};
+    return res.status(201).json(updatedCourse);
+  } catch (err) {
+    return serverError(res, err, "Failed to update course", req);
+  }
+};
+
+module.exports = { updateCourse };

@@ -1,7 +1,14 @@
 const prisma = require("../../config/database/prismaClient");
+const { canAccessOwnedResource } = require("../../utils/roles");
+const { serverError } = require("../../utils/httpErrors");
 
 const getUser = async (req, res) => {
   const { id } = req.params;
+
+  // Owner or staff only. Respond 404 for both "missing" and "not yours" so ids can't be probed.
+  if (!canAccessOwnedResource(req.user, id)) {
+    return res.status(404).json({ error: "User not found" });
+  }
 
   try {
     const user = await prisma.user.findUnique({
@@ -60,8 +67,7 @@ const getUser = async (req, res) => {
 
     res.status(200).json(formattedUser);
   } catch (error) {
-    console.error("Error fetching user:", error);
-    res.status(500).json({ error: "An error occurred while fetching the user.", details: error.message, stack: error.stack });
+    return serverError(res, error, "An error occurred while fetching the user.", req);
   }
 };
 

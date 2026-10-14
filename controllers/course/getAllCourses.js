@@ -1,11 +1,20 @@
 const prisma = require("../../config/database/prismaClient");
+const { isStaff } = require("../../utils/roles");
+const { serverError } = require("../../utils/httpErrors");
+const { COURSE_STATUSES } = require("./courseInput");
 
 const getAllCourses = async (req, res) => {
   try {
     const { status, search, category, sort = 'newest', page = 1, limit = 50 } = req.query;
 
     const where = {};
-    if (status) where.status = status;
+    // Visibility: only staff may list unpublished (DRAFT / INACTIVE / ARCHIVED) courses.
+    if (!isStaff(req.user)) {
+      where.status = "ACTIVE";
+    } else if (status) {
+      if (!COURSE_STATUSES.includes(status)) return res.status(400).json({ error: "Invalid status" });
+      where.status = status;
+    }
     
     // Category could match class or degree in this schema
     if (category) {
@@ -34,7 +43,9 @@ const getAllCourses = async (req, res) => {
     else if (sort === 'name-asc') orderBy = { name: 'asc' };
     else if (sort === 'name-desc') orderBy = { name: 'desc' };
 
-    const skip = (Number(page) - 1) * Number(limit);
+    const take = Math.min(Math.max(Number.parseInt(limit, 10) || 50, 1), 200);
+    const pageNum = Math.max(Number.parseInt(page, 10) || 1, 1);
+    const skip = (pageNum - 1) * take;
 
     const [total, courses] = await prisma.$transaction([
       prisma.course.count({ where }),
@@ -42,7 +53,7 @@ const getAllCourses = async (req, res) => {
         where,
         orderBy,
         skip,
-        take: Number(limit),
+        take,
         include: {
           quizess: true,
           _count: {
@@ -66,13 +77,13 @@ const getAllCourses = async (req, res) => {
       data: formattedCourses,
       meta: {
         total,
-        page: Number(page),
-        limit: Number(limit),
-        totalPages: Math.ceil(total / Number(limit))
+        page: pageNum,
+        limit: take,
+        totalPages: Math.ceil(total / take)
       }
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    return serverError(res, err, "Failed to load courses", req);
   }
 };
 

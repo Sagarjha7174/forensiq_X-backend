@@ -1,59 +1,64 @@
 const express = require("express");
 const router = express.Router();
-const prisma = require("@prisma/client").PrismaClient;
 const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
-const prismaClient = new prisma();
-require("dotenv").config();
+const prisma = require("../config/database/prismaClient");
+const { signAuthToken } = require("../utils/authToken");
+const { clientRole, isSubAdmin } = require("../utils/roles");
+const { isAccountUsable } = require("../middlewares/auth");
+const { limiters } = require("../utils/rateLimiters");
+const logger = require("../utils/logger");
 
-router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+// One message for every credential failure so the endpoint cannot be used to
+// discover which emails are registered or which use Google sign-in.
+const INVALID_CREDENTIALS =
+  "Invalid credentials. If you signed up with Google, use \"Continue with Google\".";
+
+// Unknown users still pay for one bcrypt comparison so response timing does not
+// reveal whether the account exists.
+const DUMMY_HASH = bcrypt.hashSync("forensiq-timing-equalizer", 10);
+
+router.post("/login", limiters.loginByIp, limiters.loginByEmail, async (req, res) => {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required" });
+  }
+
   let user;
   try {
-    user = await prismaClient.user.findUnique({ where: { email } });
+    // Exact match first; fall back to case-insensitive for mixed-case legacy rows.
+    user =
+      (await prisma.user.findUnique({ where: { email } })) ||
+      (await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } }));
   } catch (err) {
-    console.error("Database error during login:", err.message);
+    logger.error("Database error during login", { requestId: req.id, error: err });
     return res.status(500).json({ error: "Internal server error. Database unreachable." });
   }
 
-  if (!user) {
-    return res.status(401).json({ error: "Invalid credentials" });
+  const passwordOk = await bcrypt.compare(password, user?.password || DUMMY_HASH);
+  if (!user || !user.password || !passwordOk) {
+    return res.status(401).json({ error: INVALID_CREDENTIALS });
   }
-  if (!user.password) {
-    return res.status(401).json({ error: "This account uses Google Sign-In. Please log in with Google." });
-  }
-  if (!(await bcrypt.compare(password, user.password))) {
-    return res.status(401).json({ error: "Invalid credentials" });
-  }
-  if (user.isActive === false) {
+
+  if (!isAccountUsable(user)) {
     return res.status(401).json({ error: "User is not active" });
   }
 
-  const token = jwt.sign(
-    {
-      id: user.id,
-      role: user.is_sub_admin ? 'SUBADMIN' : user.role,
-      userName: user.name,
-      profileCompleted: user.profileCompleted ?? true,
-      is_sub_admin: Boolean(user.is_sub_admin),
-    },
-    process.env.JWT_SECRET,
-    {
-      expiresIn: "24h",
-    }
-  );
+  const token = signAuthToken(user);
 
-  res.json({
+  return res.json({
     message: "Login successful",
-    token: token,
+    token,
     user: {
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.is_sub_admin ? 'SUBADMIN' : user.role,
-      is_sub_admin: Boolean(user.is_sub_admin),
-      profileCompleted: user.profileCompleted ?? true
-    }
+      role: clientRole(user),
+      is_sub_admin: isSubAdmin(user),
+      profileCompleted: user.profileCompleted ?? true,
+    },
   });
 });
+
 module.exports = router;
